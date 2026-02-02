@@ -1,0 +1,210 @@
+{
+  "main": {
+    "MQ001": {
+      "id": "MQ001",
+      "title": "발붙일 곳",
+      "description": "저잣거리에서 숙소와 정보를 확보하라.",
+      "chapter": 1,
+      "prerequisites": [],
+      "objectives": [
+        { "id": "obj1", "type": "talk", "target": "innkeeper", "description": "주막 주인과 대화" },
+        { "id": "obj2", "type": "interact", "target": "quest_board", "description": "의뢰 게시판 확인" },
+        { "id": "obj3", "type": "complete_quest", "target": ["SQ001", "SQ002", "SQ003"], "count": 1, "description": "의뢰 1개 완료" }
+      ],
+      "rewards": { "exp": 100, "gold": 100, "items": ["inn_pass"], "unlocks": ["area_hub_full"] },
+      "dialogueOnComplete": "MQ001_complete"
+    },
+    "MQ002": {
+      "id": "MQ002",
+      "title": "소문의 용병",
+      "description": "저잣거리에서 명성을 쌓아 세력의 관심을 끌어라.",
+      "chapter": 1,
+      "prerequisites": ["MQ001"],
+      "objectives": [
+        { "id": "obj1", "type": "complete_quest", "target": ["SQ004", "SQ005", "SQ006", "SQ007", "SQ008"], "count": 3, "description": "의뢰 3개 완료" },
+        { "id": "obj2", "type": "talk", "target": "taebong_agent", "description": "태봉 대리인과 대화" },
+        { "id": "obj3", "type": "talk", "target": "goryeo_agent", "description": "고려 대리인과 대화" },
+        { "id": "obj4", "type": "talk", "target": "hubaekje_agent", "description": "후백제 대리인과 대화" }
+      ],
+      "rewards": { "exp": 300, "gold": 300, "unlocks": ["faction_quests"] }
+    },
+    "MQ003": {
+      "id": "MQ003",
+      "title": "과거의 조각",
+      "description": "기억의 단서를 찾아라.",
+      "chapter": 1,
+      "prerequisites": ["MQ002"],
+      "objectives": [
+        { "id": "obj1", "type": "interact", "target": "belongings", "description": "소지품 조사" },
+        { "id": "obj2", "type": "talk", "target": "fortune_teller", "description": "점술가 방문" },
+        { "id": "obj3", "type": "travel", "target": "paegang_entrance", "description": "패강 방향 단서 확인" }
+      ],
+      "rewards": { "exp": 200, "gold": 150, "items": ["balhae_pendant"], "unlocks": ["area_paegang_partial"] }
+    },
+    "MQ004": {
+      "id": "MQ004",
+      "title": "과거의 실마리",
+      "description": "발해 유민촌에서 정체의 단서를 찾아라.",
+      "chapter": 2,
+      "prerequisites": ["MQ003"],
+      "objectives": [
+        { "id": "obj1", "type": "travel", "target": "paegang_village", "description": "패강 유민촌 방문" },
+        { "id": "obj2", "type": "talk", "target": "elder_balhae", "description": "유민 원로와 대화" },
+        { "id": "obj3", "type": "interact", "target": "tattoo_clue", "description": "문신의 의미 해독" }
+      ],
+      "rewards": { "exp": 400, "gold": 200 }
+    }
+  },
+  "faction": {
+    "TF001": {
+      "id": "TF001",
+      "title": "철원으로의 초대",
+      "faction": "taebong",
+      "type": "mandatory",
+      "prerequisites": ["MQ002"],
+      "objectives": [
+        { "id": "obj1", "type": "travel", "target": "cheolwon", "description": "철원경 방문" },
+        { "id": "obj2", "type": "talk", "target": "gungye", "description": "궁예 알현" },
+        { "id": "obj3", "type": "minigame", "target": "gwansimbeop_test", "description": "관심법 테스트 통과" }
+      ],
+      "rewards": { "exp": 400, "gold": 500, "factionRep": { "taebong": 15 }, "unlocks": ["area_cheolwon_full"] }
+    },
+    "TF002": {
+      "id": "TF002",
+      "title": "미륵의 시험",
+      "faction": "taebong",
+      "type": "mandatory",
+      "prerequisites": ["TF001"],
+      "objectives": [
+        { "id": "obj1", "type": "travel", "target": "mireuk_temple", "description": "미륵 사원 도착" },
+        { "id": "obj2", "type": "kill", "target": "fanatic", "count": 10, "description": "광신도 10명 처치" },
+        { "id": "obj3", "type": "kill", "target": "boss_jeok_myeong", "count": 1, "description": "적명 처치" }
+      ],
+      "rewards": { "exp": 600, "gold": 800, "factionRep": { "taebong": 10 } }
+    },
+    "TF003": {
+      "id": "TF003",
+      "title": "내부의 적",
+      "faction": "taebong",
+      "type": "mandatory",
+      "prerequisites": ["TF002"],
+      "objectives": [
+        { "id": "obj1", "type": "travel", "target": "cheolwon_inner", "description": "철원 내부 조사" },
+        { "id": "obj2", "type": "interact", "target": "bokji_evidence", "description": "복지겸 행동 증거 수집" },
+        { "id": "obj3", "type": "talk", "target": "gungye", "description": "궁예에게 보고" }
+      ],
+      "rewards": { "exp": 500, "gold": 600, "factionRep": { "taebong": 15 } }
+    },
+    "GR001": {
+      "id": "GR001",
+      "title": "송악의 상인",
+      "faction": "goryeo",
+      "type": "mandatory",
+      "prerequisites": ["MQ002"],
+      "objectives": [
+        { "id": "obj1", "type": "talk", "target": "songak_merchant", "description": "송악 상인과 대화" },
+        { "id": "obj2", "type": "kill", "target": "pirate", "count": 15, "description": "해적 15명 처치" },
+        { "id": "obj3", "type": "travel", "target": "naju", "description": "나주 도착" }
+      ],
+      "rewards": { "exp": 400, "gold": 600, "factionRep": { "goryeo": 15 }, "unlocks": ["area_naju"] }
+    },
+    "GR002": {
+      "id": "GR002",
+      "title": "왕건의 제안",
+      "faction": "goryeo",
+      "type": "mandatory",
+      "prerequisites": ["GR001"],
+      "objectives": [
+        { "id": "obj1", "type": "travel", "target": "wanggeon_estate", "description": "왕건 저택 방문" },
+        { "id": "obj2", "type": "talk", "target": "wanggeon", "description": "왕건과 밀담" }
+      ],
+      "rewards": { "exp": 300, "gold": 400, "factionRep": { "goryeo": 10 }, "unlocks": ["area_songak_estate"] }
+    },
+    "GR003": {
+      "id": "GR003",
+      "title": "호족 설득",
+      "faction": "goryeo",
+      "type": "mandatory",
+      "prerequisites": ["GR002"],
+      "objectives": [
+        { "id": "obj1", "type": "talk", "target": "hojok_a", "description": "호족 A 설득" },
+        { "id": "obj2", "type": "talk", "target": "hojok_b", "description": "호족 B 설득" },
+        { "id": "obj3", "type": "talk", "target": "hojok_c", "description": "호족 C 설득" }
+      ],
+      "rewards": { "exp": 500, "gold": 700, "factionRep": { "goryeo": 15 } }
+    },
+    "HB001": {
+      "id": "HB001",
+      "title": "완산주의 무인",
+      "faction": "hubaekje",
+      "type": "mandatory",
+      "prerequisites": ["MQ002"],
+      "objectives": [
+        { "id": "obj1", "type": "travel", "target": "wansanju", "description": "완산주 방문" },
+        { "id": "obj2", "type": "talk", "target": "gyeonhwon", "description": "견훤 알현" },
+        { "id": "obj3", "type": "kill", "target": "boss_cheolkwon", "count": 1, "description": "천무와 대련 승리" }
+      ],
+      "rewards": { "exp": 400, "gold": 500, "factionRep": { "hubaekje": 15 }, "unlocks": ["area_wansanju_full"] }
+    },
+    "HB002": {
+      "id": "HB002",
+      "title": "원한의 뿌리",
+      "faction": "hubaekje",
+      "type": "mandatory",
+      "prerequisites": ["HB001"],
+      "objectives": [
+        { "id": "obj1", "type": "travel", "target": "sangju_birthplace", "description": "견훤 생가 방문" },
+        { "id": "obj2", "type": "talk", "target": "ajagae_keeper", "description": "아자개 이야기 청취" }
+      ],
+      "rewards": { "exp": 300, "gold": 400, "factionRep": { "hubaekje": 10 } }
+    },
+    "HB003": {
+      "id": "HB003",
+      "title": "금성으로",
+      "faction": "hubaekje",
+      "type": "mandatory",
+      "prerequisites": ["HB002"],
+      "objectives": [
+        { "id": "obj1", "type": "travel", "target": "geumseong", "description": "금성 잠입" },
+        { "id": "obj2", "type": "interact", "target": "silla_intel", "description": "신라 동태 파악" },
+        { "id": "obj3", "type": "talk", "target": "gyeonhwon", "description": "견훤에게 보고" }
+      ],
+      "rewards": { "exp": 500, "gold": 600, "factionRep": { "hubaekje": 15 }, "unlocks": ["area_geumseong_full"] }
+    }
+  },
+  "side": {
+    "SQ001": {
+      "id": "SQ001",
+      "title": "도적 소탕",
+      "description": "마을 근처 도적들을 처치하라.",
+      "chapter": 1,
+      "prerequisites": [],
+      "objectives": [
+        { "id": "obj1", "type": "kill", "target": "bandit", "count": 5, "description": "도적 5명 처치" }
+      ],
+      "rewards": { "exp": 50, "gold": 80, "factionRep": { "hubaekje": 5 } }
+    },
+    "SQ002": {
+      "id": "SQ002",
+      "title": "분실물 수색",
+      "description": "상인이 잃어버린 물건을 찾아라.",
+      "chapter": 1,
+      "prerequisites": [],
+      "objectives": [
+        { "id": "obj1", "type": "collect", "target": "lost_goods", "count": 3, "description": "분실물 3개 수집" }
+      ],
+      "rewards": { "exp": 50, "gold": 80, "factionRep": { "goryeo": 5 } }
+    },
+    "SQ003": {
+      "id": "SQ003",
+      "title": "은밀한 배달",
+      "description": "수상한 인물에게 서신을 전달하라.",
+      "chapter": 1,
+      "prerequisites": [],
+      "objectives": [
+        { "id": "obj1", "type": "talk", "target": "mysterious_contact", "description": "수상한 인물에게 서신 전달" }
+      ],
+      "rewards": { "exp": 50, "gold": 80, "factionRep": { "taebong": 5 } }
+    }
+  }
+}

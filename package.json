@@ -1,0 +1,26 @@
+{
+  "name": "samhanjimong",
+  "version": "1.0.0",
+  "description": "삼한지몽 (三韓之夢) - 2D Metroidvania Action RPG",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:59627/git/pollmap/darksoooooul"
+  },
+  "keywords": ["game", "phaser", "metroidvania", "rpg"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "phaser": "^3.70.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.3.3",
+    "vite": "^5.4.11"
+  }
+}

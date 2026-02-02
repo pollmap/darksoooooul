@@ -1,0 +1,67 @@
+{
+  "skills": {
+    "flash_slash": {
+      "id": "flash_slash",
+      "name": "섬광참",
+      "type": "sword",
+      "energyCost": 20,
+      "damage": 25,
+      "cooldown": 1000,
+      "description": "전방으로 빠르게 돌진하며 베기."
+    },
+    "whirlwind": {
+      "id": "whirlwind",
+      "name": "회오리",
+      "type": "sword",
+      "energyCost": 35,
+      "damage": 30,
+      "cooldown": 1500,
+      "description": "360도 회전 공격."
+    },
+    "ki_blast": {
+      "id": "ki_blast",
+      "name": "기공탄",
+      "type": "magic",
+      "energyCost": 25,
+      "damage": 20,
+      "cooldown": 800,
+      "description": "원거리 기탄 발사."
+    },
+    "shadow_clone": {
+      "id": "shadow_clone",
+      "name": "분신",
+      "type": "shadow",
+      "energyCost": 40,
+      "damage": 0,
+      "cooldown": 5000,
+      "description": "잠시 분신을 생성하여 데미지를 분산."
+    },
+    "poison_mist": {
+      "id": "poison_mist",
+      "name": "독안개",
+      "type": "shadow",
+      "energyCost": 30,
+      "damage": 15,
+      "cooldown": 2000,
+      "description": "지역에 독 피해를 입히는 안개를 생성."
+    },
+    "ki_burst": {
+      "id": "ki_burst",
+      "name": "기력 폭발",
+      "type": "magic",
+      "energyCost": 50,
+      "damage": 40,
+      "cooldown": 8000,
+      "description": "주변 적을 밀어내는 기력 폭발."
+    },
+    "gwanjo": {
+      "id": "gwanjo",
+      "name": "관조",
+      "type": "magic",
+      "energyCost": 20,
+      "damage": 0,
+      "cooldown": 10000,
+      "description": "적의 공격 타이밍을 읽어 회피 성공률 증가. 태봉 퀘스트 보상."
+    }
+  }
+}

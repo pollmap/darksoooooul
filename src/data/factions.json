@@ -1,0 +1,90 @@
+{
+  "factions": {
+    "taebong": {
+      "id": "taebong",
+      "name": "태봉",
+      "nameEn": "Taebong",
+      "leader": "궁예",
+      "color": "#4a148c",
+      "description": "미륵을 자처하는 궁예가 세운 나라. 관심법과 공포정치로 다스린다.",
+      "headquarters": "cheolwon",
+      "relations": {
+        "goryeo": -30,
+        "hubaekje": -20,
+        "silla": -10
+      }
+    },
+    "goryeo": {
+      "id": "goryeo",
+      "name": "고려",
+      "nameEn": "Goryeo",
+      "leader": "왕건",
+      "color": "#00695c",
+      "description": "송악 호족 왕건이 이끄는 세력. 해상 무역과 외교로 세를 불린다.",
+      "headquarters": "songak",
+      "relations": {
+        "taebong": -30,
+        "hubaekje": -40,
+        "silla": 10
+      }
+    },
+    "hubaekje": {
+      "id": "hubaekje",
+      "name": "후백제",
+      "nameEn": "Hubaekje",
+      "leader": "견훤",
+      "color": "#b71c1c",
+      "description": "신라에 대한 원한으로 뭉친 견훤의 나라. 강력한 군사력을 자랑한다.",
+      "headquarters": "wansanju",
+      "relations": {
+        "taebong": -20,
+        "goryeo": -40,
+        "silla": -50
+      }
+    }
+  },
+  "reputationThresholds": {
+    "hostile": -60,
+    "unfriendly": -30,
+    "neutral": 0,
+    "friendly": 30,
+    "allied": 60,
+    "devoted": 90
+  },
+  "reputationEffects": {
+    "hostile": {
+      "shopDiscount": -0.5,
+      "npcReaction": "attack",
+      "areaAccess": "restricted",
+      "bountyHunters": true
+    },
+    "unfriendly": {
+      "shopDiscount": -0.2,
+      "npcReaction": "suspicious",
+      "areaAccess": "limited"
+    },
+    "neutral": {
+      "shopDiscount": 0,
+      "npcReaction": "normal",
+      "areaAccess": "public"
+    },
+    "friendly": {
+      "shopDiscount": 0.1,
+      "npcReaction": "welcoming",
+      "areaAccess": "extended"
+    },
+    "allied": {
+      "shopDiscount": 0.2,
+      "npcReaction": "respectful",
+      "areaAccess": "full",
+      "specialQuests": true
+    },
+    "devoted": {
+      "shopDiscount": 0.3,
+      "npcReaction": "reverent",
+      "areaAccess": "full",
+      "specialQuests": true,
+      "endingUnlock": true
+    }
+  }
+}

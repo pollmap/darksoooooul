@@ -1,0 +1,148 @@
+{
+  "consumables": {
+    "potion_small": {
+      "id": "potion_small",
+      "name": "소 회복약",
+      "description": "체력을 30 회복한다.",
+      "type": "consumable",
+      "effect": { "heal": 30 },
+      "price": 50,
+      "maxStack": 10
+    },
+    "potion_medium": {
+      "id": "potion_medium",
+      "name": "중 회복약",
+      "description": "체력을 60 회복한다.",
+      "type": "consumable",
+      "effect": { "heal": 60 },
+      "price": 120,
+      "maxStack": 10
+    },
+    "potion_large": {
+      "id": "potion_large",
+      "name": "대 회복약",
+      "description": "체력을 전부 회복한다.",
+      "type": "consumable",
+      "effect": { "healFull": true },
+      "price": 300,
+      "maxStack": 5
+    },
+    "energy_shard": {
+      "id": "energy_shard",
+      "name": "기력 조각",
+      "description": "기력을 30 회복한다.",
+      "type": "consumable",
+      "effect": { "energy": 30 },
+      "price": 60,
+      "maxStack": 10
+    },
+    "spirit_essence": {
+      "id": "spirit_essence",
+      "name": "영혼의 정수",
+      "description": "체력과 기력을 30씩 회복한다.",
+      "type": "consumable",
+      "effect": { "heal": 30, "energy": 30 },
+      "price": 150,
+      "maxStack": 5
+    }
+  },
+  "weapons": {
+    "basic_sword": {
+      "id": "basic_sword",
+      "name": "낡은 검",
+      "description": "평범한 철검.",
+      "type": "weapon",
+      "stats": { "attackPower": 5 },
+      "price": 0
+    },
+    "taebong_sword": {
+      "id": "taebong_sword",
+      "name": "태봉 군검",
+      "description": "태봉 군대에서 지급하는 검.",
+      "type": "weapon",
+      "stats": { "attackPower": 10 },
+      "price": 500
+    },
+    "goryeo_blade": {
+      "id": "goryeo_blade",
+      "name": "고려 명도",
+      "description": "송악 대장장이가 만든 명검.",
+      "type": "weapon",
+      "stats": { "attackPower": 12 },
+      "price": 600
+    },
+    "hubaekje_war_sword": {
+      "id": "hubaekje_war_sword",
+      "name": "후백제 전검",
+      "description": "후백제 무인들이 쓰는 전투검.",
+      "type": "weapon",
+      "stats": { "attackPower": 14 },
+      "price": 700
+    },
+    "shadow_blade": {
+      "id": "shadow_blade",
+      "name": "어둠의 검",
+      "description": "어둠의 기운이 서린 검. 태봉 비밀 임무 보상.",
+      "type": "weapon",
+      "stats": { "attackPower": 18, "critChance": 0.1 },
+      "price": 0
+    },
+    "legendary_sword": {
+      "id": "legendary_sword",
+      "name": "삼한의 검",
+      "description": "삼한을 하나로 만들 운명의 검.",
+      "type": "weapon",
+      "stats": { "attackPower": 25 },
+      "price": 0
+    }
+  },
+  "accessories": {
+    "health_charm": {
+      "id": "health_charm",
+      "name": "건강 부적",
+      "description": "최대 체력이 20 증가한다.",
+      "type": "accessory",
+      "stats": { "maxHealth": 20 },
+      "price": 300
+    },
+    "speed_boots": {
+      "id": "speed_boots",
+      "name": "경보 신발",
+      "description": "이동 속도가 15% 증가한다.",
+      "type": "accessory",
+      "stats": { "speedPercent": 0.15 },
+      "price": 400
+    },
+    "parry_ring": {
+      "id": "parry_ring",
+      "name": "패링의 반지",
+      "description": "패링 판정 시간이 50% 증가한다.",
+      "type": "accessory",
+      "stats": { "parryWindowPercent": 0.5 },
+      "price": 500
+    }
+  },
+  "keys": {
+    "inn_pass": {
+      "id": "inn_pass",
+      "name": "숙소 이용권",
+      "description": "저잣거리 주막의 숙소를 이용할 수 있다.",
+      "type": "key",
+      "price": 0
+    },
+    "balhae_pendant": {
+      "id": "balhae_pendant",
+      "name": "발해 왕실 패",
+      "description": "발해 왕실의 문장이 새겨진 패. 기억의 실마리.",
+      "type": "key",
+      "price": 0
+    },
+    "cheolwon_pass": {
+      "id": "cheolwon_pass",
+      "name": "철원 통행증",
+      "description": "철원경 내성 출입 허가증.",
+      "type": "key",
+      "price": 0
+    }
+  }
+}
