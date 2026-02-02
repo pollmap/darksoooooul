@@ -1,12 +1,14 @@
 import { BaseScene } from '../BaseScene';
 import { SCENES, DEPTH } from '../../utils/Constants';
 import { Logger } from '../../utils/Logger';
+import { Player } from '../../entities/Player';
 
 /**
  * Wansanju world scene - 완산주 (Hubaekje territory)
  * Military fortress city with arena and barracks.
  */
 export class WansanjuScene extends BaseScene {
+    private player!: Player;
     private platforms!: Phaser.Physics.Arcade.StaticGroup;
     private readonly worldWidth = 3800;
     private readonly worldHeight = 1600;
@@ -24,15 +26,12 @@ export class WansanjuScene extends BaseScene {
 
         this.physics.world.setBounds(0, 0, this.worldWidth, this.worldHeight);
         this.cameras.main.setBounds(0, 0, this.worldWidth, this.worldHeight);
+        this.player = new Player(this, 100, 1200);
+        this.physics.add.collider(this.player, this.platforms);
+        this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
         const gameScene = this.scene.get(SCENES.GAME);
         gameScene.events.emit('area_changed', '완산주');
-        gameScene.events.emit('world_created', {
-            platforms: this.platforms,
-            worldWidth: this.worldWidth,
-            worldHeight: this.worldHeight,
-            spawnPoint: { x: 100, y: 1200 },
-        });
 
         this.fadeIn();
     }
@@ -76,6 +75,12 @@ export class WansanjuScene extends BaseScene {
         const rect = this.add.rectangle(x + w / 2, y + h / 2, w, h, color).setDepth(DEPTH.TILES);
         this.physics.add.existing(rect, true);
         this.platforms.add(rect);
+    }
+
+    update(time: number, delta: number): void {
+        if (this.player) {
+            this.player.update(time, delta);
+        }
     }
 
     public getPlatforms(): Phaser.Physics.Arcade.StaticGroup { return this.platforms; }

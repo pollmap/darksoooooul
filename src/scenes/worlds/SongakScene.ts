@@ -1,6 +1,7 @@
 import { BaseScene } from '../BaseScene';
 import { SCENES, DEPTH } from '../../utils/Constants';
 import { Logger } from '../../utils/Logger';
+import { Player } from '../../entities/Player';
 
 /**
  * Songak world scene - 송악 (Goryeo territory)
@@ -8,6 +9,7 @@ import { Logger } from '../../utils/Logger';
  */
 export class SongakScene extends BaseScene {
     private platforms!: Phaser.Physics.Arcade.StaticGroup;
+    private player!: Player;
     private readonly worldWidth = 4000;
     private readonly worldHeight = 1600;
 
@@ -25,16 +27,20 @@ export class SongakScene extends BaseScene {
         this.physics.world.setBounds(0, 0, this.worldWidth, this.worldHeight);
         this.cameras.main.setBounds(0, 0, this.worldWidth, this.worldHeight);
 
+        this.player = new Player(this, 100, 1200);
+        this.physics.add.collider(this.player, this.platforms);
+        this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+
         const gameScene = this.scene.get(SCENES.GAME);
         gameScene.events.emit('area_changed', '송악');
-        gameScene.events.emit('world_created', {
-            platforms: this.platforms,
-            worldWidth: this.worldWidth,
-            worldHeight: this.worldHeight,
-            spawnPoint: { x: 100, y: 1200 },
-        });
 
         this.fadeIn();
+    }
+
+    update(time: number, delta: number): void {
+        if (this.player) {
+            this.player.update(time, delta);
+        }
     }
 
     private createWorld(): void {
