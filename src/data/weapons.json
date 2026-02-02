@@ -1,0 +1,52 @@
+{
+  "weapons": {
+    "basic_sword": {
+      "id": "basic_sword",
+      "name": "낡은 검",
+      "description": "평범한 철검.",
+      "attackPower": 5,
+      "critChance": 0.05,
+      "spriteKey": "weapon_basic_sword"
+    },
+    "taebong_sword": {
+      "id": "taebong_sword",
+      "name": "태봉 군검",
+      "description": "태봉 군대에서 지급하는 검.",
+      "attackPower": 10,
+      "critChance": 0.05,
+      "spriteKey": "weapon_taebong_sword"
+    },
+    "goryeo_blade": {
+      "id": "goryeo_blade",
+      "name": "고려 명도",
+      "description": "송악 대장장이가 만든 명검.",
+      "attackPower": 12,
+      "critChance": 0.07,
+      "spriteKey": "weapon_goryeo_blade"
+    },
+    "hubaekje_war_sword": {
+      "id": "hubaekje_war_sword",
+      "name": "후백제 전검",
+      "description": "후백제 무인들이 쓰는 전투검.",
+      "attackPower": 14,
+      "critChance": 0.05,
+      "spriteKey": "weapon_hubaekje_sword"
+    },
+    "shadow_blade": {
+      "id": "shadow_blade",
+      "name": "어둠의 검",
+      "description": "어둠의 기운이 서린 검.",
+      "attackPower": 18,
+      "critChance": 0.10,
+      "spriteKey": "weapon_shadow_blade"
+    },
+    "legendary_sword": {
+      "id": "legendary_sword",
+      "name": "삼한의 검",
+      "description": "삼한을 하나로 만들 운명의 검.",
+      "attackPower": 25,
+      "critChance": 0.15,
+      "spriteKey": "weapon_legendary_sword"
+    }
+  }
+}

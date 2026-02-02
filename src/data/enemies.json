@@ -1,0 +1,269 @@
+{
+  "common": {
+    "bandit": {
+      "name": "도적",
+      "spriteKey": "enemy_bandit",
+      "health": 30,
+      "attack": 8,
+      "defense": 0,
+      "speed": 80,
+      "exp": 10,
+      "gold": [5, 15],
+      "patterns": ["patrol", "chase", "attack"],
+      "attackTelegraph": 300,
+      "drops": [
+        { "item": "potion_small", "chance": 0.1 }
+      ]
+    },
+    "soldier_taebong": {
+      "name": "태봉 병사",
+      "spriteKey": "enemy_soldier_taebong",
+      "health": 50,
+      "attack": 12,
+      "defense": 2,
+      "speed": 70,
+      "exp": 20,
+      "gold": [10, 25],
+      "patterns": ["patrol", "chase", "attack", "block"],
+      "attackTelegraph": 400,
+      "drops": [
+        { "item": "potion_small", "chance": 0.15 },
+        { "item": "gold_small", "chance": 0.3 }
+      ]
+    },
+    "soldier_hubaekje": {
+      "name": "후백제 병사",
+      "spriteKey": "enemy_soldier_hubaekje",
+      "health": 55,
+      "attack": 14,
+      "defense": 1,
+      "speed": 75,
+      "exp": 22,
+      "gold": [12, 28],
+      "patterns": ["patrol", "chase", "attack"],
+      "attackTelegraph": 350,
+      "drops": [
+        { "item": "potion_small", "chance": 0.15 }
+      ]
+    },
+    "fanatic": {
+      "name": "광신도",
+      "spriteKey": "enemy_fanatic",
+      "health": 40,
+      "attack": 15,
+      "defense": 0,
+      "speed": 90,
+      "exp": 18,
+      "gold": [8, 20],
+      "patterns": ["patrol", "chase", "attack"],
+      "attackTelegraph": 250,
+      "drops": [
+        { "item": "energy_shard", "chance": 0.1 }
+      ]
+    },
+    "ghost": {
+      "name": "망령",
+      "spriteKey": "enemy_ghost",
+      "health": 35,
+      "attack": 10,
+      "defense": 0,
+      "speed": 60,
+      "exp": 15,
+      "gold": [0, 10],
+      "patterns": ["patrol", "chase", "attack"],
+      "attackTelegraph": 400,
+      "drops": [
+        { "item": "spirit_essence", "chance": 0.2 }
+      ]
+    },
+    "pirate": {
+      "name": "해적",
+      "spriteKey": "enemy_pirate",
+      "health": 45,
+      "attack": 11,
+      "defense": 1,
+      "speed": 85,
+      "exp": 18,
+      "gold": [15, 30],
+      "patterns": ["patrol", "chase", "attack"],
+      "attackTelegraph": 300,
+      "drops": [
+        { "item": "potion_small", "chance": 0.12 }
+      ]
+    }
+  },
+  "bosses": {
+    "heukrang": {
+      "name": "흑랑",
+      "nameEn": "Heukrang",
+      "title": "해적왕 후예",
+      "location": "songak",
+      "spriteKey": "boss_heukrang",
+      "health": 500,
+      "phases": [
+        {
+          "threshold": 1.0,
+          "patterns": ["slash_combo", "anchor_throw", "dash_slash"]
+        },
+        {
+          "threshold": 0.5,
+          "patterns": ["slash_combo", "anchor_throw", "dash_slash", "shadow_clone", "spin_attack"]
+        }
+      ],
+      "rewards": {
+        "exp": 500,
+        "gold": 1000,
+        "item": "ability_water_flow",
+        "achievement": "boss_heukrang"
+      }
+    },
+    "cheolkwon": {
+      "name": "철권",
+      "nameEn": "Cheolkwon",
+      "title": "투기장 챔피언",
+      "location": "wansanju",
+      "spriteKey": "boss_cheolkwon",
+      "health": 600,
+      "phases": [
+        {
+          "threshold": 1.0,
+          "patterns": ["ground_pound", "grab", "uppercut"]
+        },
+        {
+          "threshold": 0.5,
+          "patterns": ["ground_pound", "grab", "uppercut", "punch_flurry", "triple_slam"]
+        }
+      ],
+      "rewards": {
+        "exp": 600,
+        "gold": 1200,
+        "item": "ability_wall_climb",
+        "achievement": "boss_cheolkwon"
+      }
+    },
+    "janwol": {
+      "name": "잔월",
+      "nameEn": "Janwol",
+      "title": "화랑 잔존",
+      "location": "geumseong",
+      "spriteKey": "boss_janwol",
+      "health": 450,
+      "phases": [
+        {
+          "threshold": 1.0,
+          "patterns": ["sword_dance", "moonlight_slash", "flash_step"]
+        },
+        {
+          "threshold": 0.5,
+          "patterns": ["sword_dance", "moonlight_slash", "flash_step", "afterimage", "falling_petals"]
+        }
+      ],
+      "rewards": {
+        "exp": 550,
+        "gold": 1100,
+        "item": "ability_double_jump",
+        "achievement": "boss_janwol"
+      }
+    },
+    "jeokMyeong": {
+      "name": "적명",
+      "nameEn": "JeokMyeong",
+      "title": "광신도 수장",
+      "location": "cheolwon",
+      "spriteKey": "boss_jeok_myeong",
+      "health": 550,
+      "phases": [
+        {
+          "threshold": 1.0,
+          "patterns": ["mireuk_beam", "summon_fanatics", "teleport_blast"]
+        },
+        {
+          "threshold": 0.5,
+          "patterns": ["mireuk_beam", "summon_fanatics", "teleport_blast", "mireuk_wrath", "mind_attack"]
+        }
+      ],
+      "rewards": {
+        "exp": 700,
+        "gold": 1400,
+        "item": "ability_dash_enhanced",
+        "achievement": "boss_jeok_myeong"
+      }
+    },
+    "bukpung": {
+      "name": "북풍",
+      "nameEn": "Bukpung",
+      "title": "발해 장군 망령",
+      "location": "paegang",
+      "spriteKey": "boss_bukpung",
+      "health": 500,
+      "phases": [
+        {
+          "threshold": 1.0,
+          "patterns": ["spear_thrust", "vanish_ambush", "summon_spirits"]
+        },
+        {
+          "threshold": 0.5,
+          "patterns": ["spear_thrust", "vanish_ambush", "summon_spirits", "north_wind", "death_thrust"]
+        }
+      ],
+      "rewards": {
+        "exp": 650,
+        "gold": 1300,
+        "item": "ability_poison_immune",
+        "achievement": "boss_bukpung"
+      }
+    },
+    "sasin": {
+      "name": "사신",
+      "nameEn": "Sasin",
+      "title": "탈영병 연합",
+      "location": "sangju",
+      "spriteKey": "boss_sasin",
+      "health": 600,
+      "phases": [
+        {
+          "threshold": 1.0,
+          "patterns": ["pincer_attack", "cross_charge", "throw_combo"]
+        },
+        {
+          "threshold": 0.5,
+          "patterns": ["pincer_attack", "cross_charge", "throw_combo", "split_attack", "berserk"]
+        }
+      ],
+      "rewards": {
+        "exp": 700,
+        "gold": 1500,
+        "item": "ability_glide",
+        "achievement": "boss_sasin"
+      }
+    },
+    "gungye": {
+      "name": "궁예",
+      "nameEn": "Gungye",
+      "title": "태봉의 왕",
+      "location": "cheolwon",
+      "spriteKey": "boss_gungye",
+      "health": 800,
+      "phases": [
+        {
+          "threshold": 1.0,
+          "patterns": ["sword_combo", "gwansimbeop", "ki_blast"]
+        },
+        {
+          "threshold": 0.5,
+          "patterns": ["sword_combo", "gwansimbeop", "ki_blast", "mireuk_manifestation", "divine_punishment"]
+        },
+        {
+          "threshold": 0.2,
+          "patterns": ["madness_rampage"]
+        }
+      ],
+      "rewards": {
+        "exp": 2000,
+        "gold": 5000,
+        "item": "legendary_sword",
+        "achievement": "boss_gungye"
+      }
+    }
+  }
+}

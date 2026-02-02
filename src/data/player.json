@@ -1,0 +1,76 @@
+{
+  "player1": {
+    "name": "대연무",
+    "nameEn": "Daeyeonmu",
+    "stats": {
+      "maxHealth": 100,
+      "maxEnergy": 100,
+      "attackPower": 10,
+      "defense": 5,
+      "speed": 200,
+      "jumpForce": 400
+    },
+    "abilities": {
+      "doubleJump": false,
+      "wallClimb": false,
+      "dashEnhanced": false,
+      "waterFlow": false,
+      "poisonImmune": false,
+      "glide": false
+    }
+  },
+  "player2": {
+    "name": "소율",
+    "nameEn": "Soyul",
+    "stats": {
+      "maxHealth": 80,
+      "maxEnergy": 100,
+      "attackPower": 8,
+      "defense": 3,
+      "speed": 220,
+      "jumpForce": 420
+    },
+    "abilities": {
+      "doubleJump": false,
+      "wallClimb": false,
+      "dashEnhanced": false,
+      "waterFlow": false,
+      "poisonImmune": false,
+      "glide": false
+    }
+  },
+  "combat": {
+    "attackFrames": {
+      "light1": 8,
+      "light2": 8,
+      "light3": 12
+    },
+    "damageMultipliers": {
+      "light1": 1.0,
+      "light2": 1.0,
+      "light3": 1.2,
+      "aerial": 0.8,
+      "downward": 1.5
+    },
+    "dodge": {
+      "iFrames": 12,
+      "distance": 150,
+      "cooldown": 300
+    },
+    "parry": {
+      "windowPerfect": 3,
+      "windowNormal": 9,
+      "stunDuration": 1000
+    },
+    "heal": {
+      "energyCost": 30,
+      "castTime": 3000,
+      "healAmount": 30
+    }
+  },
+  "upgrades": {
+    "health": [100, 120, 140, 160, 180, 200],
+    "potionCapacity": [5, 6, 7],
+    "potionEfficiency": [30, 40, 50]
+  }
+}

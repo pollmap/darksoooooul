@@ -1,0 +1,86 @@
+{
+  "areas": {
+    "hub": {
+      "id": "hub",
+      "name": "저잣거리",
+      "sceneKey": "HubScene",
+      "bgm": "bgm_hub",
+      "connections": ["songak", "wansanju", "geumseong", "cheolwon", "paegang", "sangju"],
+      "unlockCondition": null
+    },
+    "songak": {
+      "id": "songak",
+      "name": "송악",
+      "sceneKey": "SongakScene",
+      "bgm": "bgm_songak",
+      "faction": "goryeo",
+      "connections": ["hub", "naju"],
+      "unlockCondition": null,
+      "abilityReward": "waterFlow",
+      "boss": "heukrang"
+    },
+    "wansanju": {
+      "id": "wansanju",
+      "name": "완산주",
+      "sceneKey": "WansanjuScene",
+      "bgm": "bgm_wansanju",
+      "faction": "hubaekje",
+      "connections": ["hub", "geumseong"],
+      "unlockCondition": null,
+      "abilityReward": "wallClimb",
+      "boss": "cheolkwon"
+    },
+    "geumseong": {
+      "id": "geumseong",
+      "name": "금성/서라벌",
+      "sceneKey": "GeumseongScene",
+      "bgm": "bgm_geumseong",
+      "faction": "silla",
+      "connections": ["hub", "wansanju"],
+      "unlockCondition": null,
+      "abilityReward": "doubleJump",
+      "boss": "janwol"
+    },
+    "cheolwon": {
+      "id": "cheolwon",
+      "name": "철원경",
+      "sceneKey": "CheolwonScene",
+      "bgm": "bgm_cheolwon",
+      "faction": "taebong",
+      "connections": ["hub", "paegang"],
+      "unlockCondition": null,
+      "abilityReward": "dashEnhanced",
+      "boss": "jeokMyeong"
+    },
+    "paegang": {
+      "id": "paegang",
+      "name": "패강/서경",
+      "sceneKey": "PaegangScene",
+      "bgm": "bgm_paegang",
+      "faction": "balhae",
+      "connections": ["hub", "cheolwon"],
+      "unlockCondition": "quest_MQ003",
+      "abilityReward": "poisonImmune",
+      "boss": "bukpung"
+    },
+    "sangju": {
+      "id": "sangju",
+      "name": "상주/명주",
+      "sceneKey": "SangjuScene",
+      "bgm": "bgm_sangju",
+      "connections": ["hub"],
+      "unlockCondition": null,
+      "abilityReward": "glide",
+      "boss": "sasin"
+    }
+  },
+  "spawnPoints": {
+    "hub": { "x": 640, "y": 500 },
+    "songak": { "x": 100, "y": 500 },
+    "wansanju": { "x": 100, "y": 500 },
+    "geumseong": { "x": 100, "y": 500 },
+    "cheolwon": { "x": 100, "y": 500 },
+    "paegang": { "x": 100, "y": 500 },
+    "sangju": { "x": 100, "y": 500 }
+  }
+}
