@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { BaseScene } from '../BaseScene';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, DEPTH, PHYSICS, COLORS } from '../../utils/Constants';
+import { SCENES, DEPTH } from '../../utils/Constants';
 import { Logger } from '../../utils/Logger';
+import { Player } from '../../entities/Player';
 
 /**
  * Hub world scene - 저잣거리 (Marketplace)
@@ -9,6 +10,7 @@ import { Logger } from '../../utils/Logger';
  */
 export class HubScene extends BaseScene {
     private platforms!: Phaser.Physics.Arcade.StaticGroup;
+    private player!: Player;
     private worldWidth: number = 3200;
     private worldHeight: number = 1200;
 
@@ -32,17 +34,22 @@ export class HubScene extends BaseScene {
         this.physics.world.setBounds(0, 0, this.worldWidth, this.worldHeight);
         this.cameras.main.setBounds(0, 0, this.worldWidth, this.worldHeight);
 
+        // Create player
+        this.player = new Player(this, 640, 900);
+        this.physics.add.collider(this.player, this.platforms);
+        this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+
         // Emit area info
         const gameScene = this.scene.get(SCENES.GAME);
         gameScene.events.emit('area_changed', '저잣거리');
-        gameScene.events.emit('world_created', {
-            platforms: this.platforms,
-            worldWidth: this.worldWidth,
-            worldHeight: this.worldHeight,
-            spawnPoint: { x: 640, y: 900 },
-        });
 
         this.fadeIn();
+    }
+
+    update(time: number, delta: number): void {
+        if (this.player) {
+            this.player.update(time, delta);
+        }
     }
 
     private createPlatforms(): void {
