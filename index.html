@@ -3,29 +3,90 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>삼한지몽 (三韓之夢)</title>
+    <title>삼한지몽 (三韓之夢) - 2D Metroidvania Action RPG</title>
+    <meta name="description" content="후삼국시대를 배경으로 한 2D 메트로배니아 액션 RPG" />
+    <meta name="theme-color" content="#0a0a18" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='28' font-size='28'%3E%E2%9A%94%3C/text%3E%3C/svg%3E" />
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        body {
-            background-color: #1a1a2e;
+        html, body {
+            width: 100%;
+            height: 100%;
+            background-color: #0a0a18;
             overflow: hidden;
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
         }
         #game-container {
-            width: 1280px;
-            height: 720px;
+            width: 100%;
+            height: 100%;
+            max-width: 1280px;
+            max-height: 720px;
+        }
+        /* Pre-game loading indicator */
+        #preload-screen {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #0a0a18;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+        #preload-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .preload-title {
+            color: #ffd700;
+            font-family: serif;
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            letter-spacing: 4px;
+        }
+        .preload-subtitle {
+            color: #667788;
+            font-family: serif;
+            font-size: 14px;
+            margin-bottom: 40px;
+        }
+        .preload-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #1a1a2e;
+            border-top-color: #ffd700;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
+    <div id="preload-screen">
+        <div class="preload-title">삼한지몽</div>
+        <div class="preload-subtitle">三韓之夢</div>
+        <div class="preload-spinner"></div>
+    </div>
     <div id="game-container"></div>
     <script type="module" src="/src/main.ts"></script>
+    <script>
+        // Hide preload screen once Phaser starts rendering
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                const el = document.getElementById('preload-screen');
+                if (el) { el.classList.add('hidden'); setTimeout(() => el.remove(), 600); }
+            }, 1500);
+        });
+    </script>
 </body>
 </html>
