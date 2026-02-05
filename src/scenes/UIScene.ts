@@ -6,12 +6,15 @@ import { InventoryUI } from '../ui/InventoryUI';
 import { MenuUI } from '../ui/MenuUI';
 import { QuestLogUI } from '../ui/QuestLogUI';
 import { WorldMapUI } from '../ui/WorldMapUI';
+import { SkillTreeUI } from '../ui/SkillTreeUI';
+import { SettingsUI } from '../ui/SettingsUI';
 import { Logger } from '../utils/Logger';
 
-type TActiveUI = 'none' | 'dialogue' | 'inventory' | 'menu' | 'questlog' | 'map';
+type TActiveUI = 'none' | 'dialogue' | 'inventory' | 'menu' | 'questlog' | 'map' | 'skilltree' | 'settings';
 
 /**
  * UI scene running in parallel with the game, handling all UI overlays.
+ * Includes skill tree and in-game settings panels.
  */
 export class UIScene extends BaseScene {
     private hud!: HUD;
@@ -20,6 +23,8 @@ export class UIScene extends BaseScene {
     private menuUI!: MenuUI;
     private questLogUI!: QuestLogUI;
     private worldMapUI!: WorldMapUI;
+    private skillTreeUI!: SkillTreeUI;
+    private settingsUI!: SettingsUI;
     private activeUI: TActiveUI = 'none';
 
     constructor() {
@@ -35,6 +40,8 @@ export class UIScene extends BaseScene {
         this.menuUI = new MenuUI(this);
         this.questLogUI = new QuestLogUI(this);
         this.worldMapUI = new WorldMapUI(this);
+        this.skillTreeUI = new SkillTreeUI(this);
+        this.settingsUI = new SettingsUI(this);
 
         this.setupInputListeners();
         this.setupGameEventListeners();
@@ -66,20 +73,54 @@ export class UIScene extends BaseScene {
             else if (this.activeUI === 'questlog') this.closeAllUI();
         });
 
-        // Dialogue input
-        this.input.keyboard.on('keydown-SPACE', () => this.dialogueBox.onInput());
-        this.input.keyboard.on('keydown-Z', () => this.dialogueBox.onInput());
-        this.input.keyboard.on('keydown-ENTER', () => this.dialogueBox.onInput());
+        this.input.keyboard.on('keydown-K', () => {
+            if (this.activeUI === 'none') this.openSkillTree();
+            else if (this.activeUI === 'skilltree') this.closeAllUI();
+        });
 
-        // Menu navigation
+        // Dialogue and skill tree input
+        this.input.keyboard.on('keydown-SPACE', () => {
+            if (this.activeUI === 'dialogue') this.dialogueBox.onInput();
+        });
+        this.input.keyboard.on('keydown-Z', () => {
+            if (this.activeUI === 'skilltree') {
+                this.skillTreeUI.upgradeSelected();
+            } else if (this.activeUI === 'dialogue') {
+                this.dialogueBox.onInput();
+            } else if (this.activeUI === 'settings') {
+                this.settingsUI.adjustSetting(0);
+            }
+        });
+        this.input.keyboard.on('keydown-ENTER', () => {
+            if (this.activeUI === 'menu') {
+                this.menuUI.confirmSelection();
+            } else if (this.activeUI === 'skilltree') {
+                this.skillTreeUI.upgradeSelected();
+            } else if (this.activeUI === 'dialogue') {
+                this.dialogueBox.onInput();
+            } else if (this.activeUI === 'settings') {
+                this.settingsUI.adjustSetting(0);
+            }
+        });
+
+        // Navigation
         this.input.keyboard.on('keydown-UP', () => {
             if (this.activeUI === 'menu') this.menuUI.moveSelection(-1);
+            else if (this.activeUI === 'skilltree') this.skillTreeUI.moveSelection(-1);
+            else if (this.activeUI === 'settings') this.settingsUI.moveSelection(-1);
         });
         this.input.keyboard.on('keydown-DOWN', () => {
             if (this.activeUI === 'menu') this.menuUI.moveSelection(1);
+            else if (this.activeUI === 'skilltree') this.skillTreeUI.moveSelection(1);
+            else if (this.activeUI === 'settings') this.settingsUI.moveSelection(1);
         });
-        this.input.keyboard.on('keydown-ENTER', () => {
-            if (this.activeUI === 'menu') this.menuUI.confirmSelection();
+        this.input.keyboard.on('keydown-LEFT', () => {
+            if (this.activeUI === 'skilltree') this.skillTreeUI.switchCategory(-1);
+            else if (this.activeUI === 'settings') this.settingsUI.adjustSetting(-1);
+        });
+        this.input.keyboard.on('keydown-RIGHT', () => {
+            if (this.activeUI === 'skilltree') this.skillTreeUI.switchCategory(1);
+            else if (this.activeUI === 'settings') this.settingsUI.adjustSetting(1);
         });
     }
 
@@ -100,7 +141,6 @@ export class UIScene extends BaseScene {
         });
 
         this.events.on('dialogue_advance', () => {
-            // Forward to dialogue system in world scene
             gameScene.events.emit('dialogue_advance');
         });
 
@@ -113,9 +153,14 @@ export class UIScene extends BaseScene {
             this.scene.stop();
         });
 
-        gameScene.events.on('travel_to_area', (areaId: string) => {
+        gameScene.events.on('travel_to_area', (_areaId: string) => {
             this.worldMapUI.hide();
             this.activeUI = 'none';
+        });
+
+        // Open settings from pause menu
+        gameScene.events.on('open_settings', () => {
+            this.openSettings();
         });
     }
 
@@ -143,11 +188,25 @@ export class UIScene extends BaseScene {
         this.scene.get(SCENES.GAME).events.emit('pause_game');
     }
 
+    private openSkillTree(): void {
+        this.activeUI = 'skilltree';
+        this.skillTreeUI.show();
+        this.scene.get(SCENES.GAME).events.emit('pause_game');
+    }
+
+    private openSettings(): void {
+        this.activeUI = 'settings';
+        this.settingsUI.show();
+        this.scene.get(SCENES.GAME).events.emit('pause_game');
+    }
+
     private closeAllUI(): void {
         this.menuUI.hide();
         this.inventoryUI.hide();
         this.worldMapUI.hide();
         this.questLogUI.hide();
+        this.skillTreeUI.hide();
+        this.settingsUI.hide();
         this.dialogueBox.hide();
         this.activeUI = 'none';
         this.scene.get(SCENES.GAME).events.emit('resume_game');

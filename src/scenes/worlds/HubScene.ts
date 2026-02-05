@@ -3,6 +3,8 @@ import { BaseScene } from '../BaseScene';
 import { SCENES, DEPTH, GAME_WIDTH, GAME_HEIGHT } from '../../utils/Constants';
 import { Logger } from '../../utils/Logger';
 import { Player } from '../../entities/Player';
+import { VFXSystem } from '../../systems/VFXSystem';
+import { WeatherSystem } from '../../systems/WeatherSystem';
 
 /** Whether tutorial has been shown this session */
 let tutorialShown = false;
@@ -17,6 +19,8 @@ export class HubScene extends BaseScene {
     private worldWidth: number = 3200;
     private worldHeight: number = 1200;
     private tutorialContainer: Phaser.GameObjects.Container | null = null;
+    private vfx!: VFXSystem;
+    private weather!: WeatherSystem;
 
     constructor() {
         super(SCENES.HUB);
@@ -24,6 +28,12 @@ export class HubScene extends BaseScene {
 
     create(): void {
         Logger.info('HubScene', 'Creating hub world');
+
+        // Initialize VFX and Weather systems
+        this.vfx = new VFXSystem(this);
+        this.weather = new WeatherSystem(this);
+        this.weather.setWeather('fireflies', 0.4);
+        this.vfx.setVignette(0.3);
 
         // Create background layers (parallax)
         this.createBackground();
@@ -60,6 +70,7 @@ export class HubScene extends BaseScene {
         if (this.player) {
             this.player.update(time, delta);
         }
+        this.weather.update(time, delta);
     }
 
     /** Create parallax background layers */
