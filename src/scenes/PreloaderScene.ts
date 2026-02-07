@@ -1,793 +1,966 @@
 import Phaser from 'phaser';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS } from '../utils/Constants';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, COLORS, TILE_SIZE } from '../utils/Constants';
 import { Logger } from '../utils/Logger';
 
+/** Shorthand for tile dimension */
+const T = TILE_SIZE;
+
+/** Spritesheet columns (frames per direction) */
+const SHEET_COLS = 3;
+
+/** Spritesheet rows (number of directions: down, up, left, right) */
+const SHEET_ROWS = 4;
+
+/** Walk animation frame rate */
+const WALK_FPS = 6;
+
+/** Player character colour palette */
+const P_HAIR = 0x1a1a22;
+const P_HAIR_HI = 0x2a2a3a;
+const P_SKIN = 0xf0c8a0;
+const P_EYE = 0x111111;
+const P_SHIRT = 0x3355aa;
+const P_SHIRT_DK = 0x284488;
+const P_BELT = 0xddaa33;
+const P_BELT_HI = 0xeecc55;
+const P_PANTS = 0x283878;
+const P_BOOT = 0x554433;
+
+/** NPC colour definitions: [body, accent, hair, hat] */
+const NPC_PALETTES: ReadonlyArray<readonly [number, number, number, number]> = [
+    [0x8b4513, 0xcc8833, 0x3a2a1a, 0x5a4a3a],   // npc_1 – village elder
+    [0x2a8a2a, 0x44cc44, 0x2a2a2a, 0x1a6a1a],   // npc_2 – merchant
+    [0x6a2a8a, 0xaa44cc, 0x1a1a1a, 0x5a1a7a],   // npc_3 – scholar
+    [0xaa5500, 0xdd8833, 0x2a1a0a, 0x885500],    // npc_4 – guard
+] as const;
+
+/** Total generation stages for progress tracking */
+const TOTAL_STAGES = 4;
+
 /**
- * Preloader scene - loads all game assets and shows loading progress.
- * Generates pixel-art style placeholder textures programmatically.
+ * PreloaderScene - Procedurally generates every pixel-art texture needed
+ * by the top-down 16x16 tile RPG: tile textures, a player spritesheet,
+ * NPC textures, and Phaser animations. Shows a progress bar and then
+ * transitions to MainMenuScene.
  */
 export class PreloaderScene extends Phaser.Scene {
+    /** Progress bar background graphic */
+    private progressBox!: Phaser.GameObjects.Graphics;
+
+    /** Progress bar fill graphic */
+    private progressBar!: Phaser.GameObjects.Graphics;
+
+    /** Status label text */
+    private labelText!: Phaser.GameObjects.Text;
+
+    /** Percentage text */
+    private pctText!: Phaser.GameObjects.Text;
+
     constructor() {
         super(SCENES.PRELOADER);
     }
 
-    preload(): void {
-        Logger.info('PreloaderScene', 'Loading assets...');
-
-        // Create loading bar
-        const progressBar = this.add.graphics();
-        const progressBox = this.add.graphics();
-        progressBox.fillStyle(0x222222, 0.8);
-        progressBox.fillRect(GAME_WIDTH / 2 - 160, GAME_HEIGHT / 2 - 25, 320, 50);
-
-        const loadingText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 50, '로딩 중...', {
-            fontSize: '20px',
-            color: '#ffffff',
-        }).setOrigin(0.5);
-
-        const percentText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '0%', {
-            fontSize: '18px',
-            color: '#ffffff',
-        }).setOrigin(0.5);
-
-        this.load.on('progress', (value: number) => {
-            percentText.setText(`${Math.round(value * 100)}%`);
-            progressBar.clear();
-            progressBar.fillStyle(COLORS.GOLD, 1);
-            progressBar.fillRect(GAME_WIDTH / 2 - 150, GAME_HEIGHT / 2 - 15, 300 * value, 30);
-        });
-
-        this.load.on('complete', () => {
-            progressBar.destroy();
-            progressBox.destroy();
-            loadingText.destroy();
-            percentText.destroy();
-        });
-
-        this.createPlaceholderTextures();
-    }
-
+    /**
+     * Scene create - builds loading UI, generates all textures in
+     * staged batches with visual progress, creates animations, and
+     * transitions to MainMenuScene.
+     */
     create(): void {
-        Logger.info('PreloaderScene', 'All assets loaded');
-        this.scene.start(SCENES.MAIN_MENU);
+        Logger.info('PreloaderScene', 'Starting procedural texture generation');
+        this.cameras.main.setBackgroundColor(COLORS.BACKGROUND);
+        this.buildLoadingUI();
+        this.runGenerationStages();
     }
 
-    /** Create all placeholder textures for development */
-    private createPlaceholderTextures(): void {
-        this.createPlayerTexture();
-        this.createPlayer2Texture();
-        this.createNPCTextures();
-        this.createEnemyTextures();
-        this.createBossTextures();
-        this.createEnvironmentTextures();
-        this.createEffectTextures();
-        this.createItemTextures();
+    // ----------------------------------------------------------------
+    //  Loading UI
+    // ----------------------------------------------------------------
+
+    /** Create the centred progress bar and labels */
+    private buildLoadingUI(): void {
+        const BAR_W = 320;
+        const BAR_H = 30;
+        const PAD = 10;
+        const cx = GAME_WIDTH / 2;
+        const cy = GAME_HEIGHT / 2;
+
+        this.progressBox = this.add.graphics();
+        this.progressBox.fillStyle(0x222222, 0.8);
+        this.progressBox.fillRect(
+            cx - BAR_W / 2 - PAD, cy - BAR_H / 2 - PAD,
+            BAR_W + PAD * 2, BAR_H + PAD * 2,
+        );
+        this.progressBox.lineStyle(2, COLORS.GOLD, 0.5);
+        this.progressBox.strokeRect(
+            cx - BAR_W / 2 - PAD, cy - BAR_H / 2 - PAD,
+            BAR_W + PAD * 2, BAR_H + PAD * 2,
+        );
+
+        this.progressBar = this.add.graphics();
+
+        this.add.text(cx, cy - 80, '\uc0bc\ud55c\uc9c0\ubabd', {
+            fontSize: '32px',
+            color: '#ffffff',
+            fontFamily: 'monospace',
+            fontStyle: 'bold',
+        }).setOrigin(0.5);
+
+        this.labelText = this.add.text(cx, cy - 45, '\ub85c\ub529 \uc911...', {
+            fontSize: '16px',
+            color: '#cccccc',
+            fontFamily: 'monospace',
+        }).setOrigin(0.5);
+
+        this.pctText = this.add.text(cx, cy, '0%', {
+            fontSize: '14px',
+            color: '#ffffff',
+            fontFamily: 'monospace',
+        }).setOrigin(0.5);
     }
 
-    /** Create player 1 (대연무) pixel art character */
-    private createPlayerTexture(): void {
-        const g = this.add.graphics();
-        const w = 32;
-        const h = 48;
+    /**
+     * Update progress bar fill and label.
+     * @param done - Number of completed stages
+     * @param label - Status description to display
+     */
+    private setProgress(done: number, label: string): void {
+        const BAR_W = 320;
+        const BAR_H = 30;
+        const cx = GAME_WIDTH / 2;
+        const cy = GAME_HEIGHT / 2;
+        const ratio = done / TOTAL_STAGES;
 
-        // Body - dark blue hanbok
-        g.fillStyle(0x2233aa, 1);
-        g.fillRect(8, 16, 16, 20);
+        this.progressBar.clear();
+        this.progressBar.fillStyle(COLORS.GOLD, 1);
+        this.progressBar.fillRect(cx - BAR_W / 2, cy - BAR_H / 2, BAR_W * ratio, BAR_H);
+        this.pctText.setText(`${Math.round(ratio * 100)}%`);
+        this.labelText.setText(label);
+    }
 
-        // Head
-        g.fillStyle(0xddbb88, 1);
-        g.fillRect(10, 4, 12, 12);
+    // ----------------------------------------------------------------
+    //  Generation orchestrator
+    // ----------------------------------------------------------------
 
-        // Hair (black topknot - 상투)
-        g.fillStyle(0x222222, 1);
-        g.fillRect(10, 2, 12, 6);
-        g.fillRect(13, 0, 6, 4);
+    /** Run each generation stage with a short delay so the bar repaints */
+    private runGenerationStages(): void {
+        const stages: { label: string; fn: () => void }[] = [
+            { label: '\ud0c0\uc77c \ud14d\uc2a4\ucc98 \uc0dd\uc131 \uc911...', fn: () => this.generateTileTextures() },
+            { label: '\ud50c\ub808\uc774\uc5b4 \uc2a4\ud504\ub77c\uc774\ud2b8 \uc0dd\uc131 \uc911...', fn: () => this.generatePlayerSpritesheet() },
+            { label: 'NPC \uc2a4\ud504\ub77c\uc774\ud2b8 \uc0dd\uc131 \uc911...', fn: () => this.generateNPCTextures() },
+            { label: '\uc560\ub2c8\uba54\uc774\uc158 \uc124\uc815 \uc911...', fn: () => this.createAnimations() },
+        ];
 
+        const next = (i: number): void => {
+            if (i >= stages.length) {
+                this.setProgress(TOTAL_STAGES, '\ub85c\ub529 \uc644\ub8cc!');
+                this.time.delayedCall(300, () => {
+                    Logger.info('PreloaderScene', 'All textures and animations ready');
+                    this.scene.start(SCENES.MAIN_MENU);
+                });
+                return;
+            }
+            const s = stages[i];
+            this.labelText.setText(s.label);
+            try {
+                s.fn();
+            } catch (err) {
+                Logger.error('PreloaderScene', `Stage failed: ${s.label}`, err);
+            }
+            this.setProgress(i + 1, s.label);
+            this.time.delayedCall(50, () => next(i + 1));
+        };
+
+        next(0);
+    }
+
+    // ----------------------------------------------------------------
+    //  Canvas drawing helpers
+    // ----------------------------------------------------------------
+
+    /** Convert 0xRRGGBB to a CSS hex string '#rrggbb' */
+    private hex(c: number): string {
+        return '#' + c.toString(16).padStart(6, '0');
+    }
+
+    /** Set ctx.fillStyle from a numeric colour and optional alpha */
+    private setFill(ctx: CanvasRenderingContext2D, color: number, alpha = 1): void {
+        if (alpha < 1) {
+            const r = (color >> 16) & 0xff;
+            const g = (color >> 8) & 0xff;
+            const b = color & 0xff;
+            ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+        } else {
+            ctx.fillStyle = this.hex(color);
+        }
+    }
+
+    /** Draw a filled rectangle on a canvas context */
+    private dr(
+        ctx: CanvasRenderingContext2D,
+        x: number, y: number, w: number, h: number,
+        color: number, alpha = 1,
+    ): void {
+        this.setFill(ctx, color, alpha);
+        ctx.fillRect(x, y, w, h);
+    }
+
+    /** Draw a single pixel */
+    private dp(ctx: CanvasRenderingContext2D, x: number, y: number, color: number): void {
+        this.setFill(ctx, color);
+        ctx.fillRect(x, y, 1, 1);
+    }
+
+    /**
+     * Create a TxT CanvasTexture, return context and texture handle.
+     * Throws if the canvas could not be created.
+     * @param key - Texture key to register
+     */
+    private makeTile(key: string): { ctx: CanvasRenderingContext2D; ct: Phaser.Textures.CanvasTexture } {
+        const ct = this.textures.createCanvas(key, T, T);
+        if (!ct) {
+            throw new Error(`Failed to create canvas texture: ${key}`);
+        }
+        return { ctx: ct.getContext(), ct };
+    }
+
+    // ----------------------------------------------------------------
+    //  Tile texture generators  (each 16x16)
+    // ----------------------------------------------------------------
+
+    /** Generate all 15 tile textures */
+    private generateTileTextures(): void {
+        this.genGrass();
+        this.genPath();
+        this.genWater();
+        this.genTallGrass();
+        this.genTreeTrunk();
+        this.genTreeTop();
+        this.genFence();
+        this.genBuildingWall();
+        this.genBuildingRoof();
+        this.genDoor();
+        this.genFlower();
+        this.genSign();
+        this.genBridge();
+        this.genStairs();
+        this.genRoofRed();
+        Logger.debug('PreloaderScene', '15 tile textures generated');
+    }
+
+    /** tile_grass - green field with subtle darker/lighter pixel noise */
+    private genGrass(): void {
+        const { ctx, ct } = this.makeTile('tile_grass');
+        this.dr(ctx, 0, 0, T, T, COLORS.GRASS);
+        const dk = COLORS.GRASS_DARK;
+        const lt = 0x6b9c4e;
+        // darker noise
+        const darkPx: number[][] = [
+            [2,3],[7,1],[12,5],[4,9],[10,11],[1,14],[14,8],[6,13],
+            [9,2],[3,7],[0,7],[15,0],[13,12],[8,15],[5,6],
+        ];
+        for (const [x, y] of darkPx) { this.dp(ctx, x, y, dk); }
+        // lighter noise
+        const ltPx: number[][] = [[5,2],[11,7],[3,12],[13,14],[8,6],[0,10],[15,4]];
+        for (const [x, y] of ltPx) { this.dp(ctx, x, y, lt); }
+        ct.refresh();
+    }
+
+    /** tile_path - tan/beige dirt with scattered darker spots and pebbles */
+    private genPath(): void {
+        const { ctx, ct } = this.makeTile('tile_path');
+        this.dr(ctx, 0, 0, T, T, COLORS.PATH);
+        const dk = COLORS.PATH_DARK;
+        const dkPx: number[][] = [
+            [1,2],[5,4],[10,1],[14,6],[3,8],[8,10],[12,13],[2,14],
+            [7,7],[11,3],[0,5],[15,12],[5,0],[9,15],
+        ];
+        for (const [x, y] of dkPx) { this.dp(ctx, x, y, dk); }
+        // lighter pebble specks
+        const lt = 0xd8c488;
+        const ltPx: number[][] = [[6,3],[11,10],[2,6],[14,1],[9,8]];
+        for (const [x, y] of ltPx) { this.dp(ctx, x, y, lt); }
+        // small stone
+        this.dp(ctx, 7, 14, 0x999988);
+        this.dp(ctx, 13, 5, 0x999988);
+        ct.refresh();
+    }
+
+    /** tile_water - blue base with horizontal wave highlights */
+    private genWater(): void {
+        const { ctx, ct } = this.makeTile('tile_water');
+        this.dr(ctx, 0, 0, T, T, COLORS.WATER);
+        const hi = COLORS.WATER_LIGHT;
+        const dk = 0x2a6ebf;
+        // wave row 1
+        this.dr(ctx, 1, 2, 4, 1, hi);
+        this.dr(ctx, 7, 3, 4, 1, hi);
+        this.dr(ctx, 13, 2, 3, 1, hi);
+        // wave row 2
+        this.dr(ctx, 0, 7, 3, 1, hi);
+        this.dr(ctx, 5, 8, 5, 1, hi);
+        this.dr(ctx, 12, 7, 4, 1, hi);
+        // wave row 3
+        this.dr(ctx, 2, 12, 4, 1, hi);
+        this.dr(ctx, 8, 13, 4, 1, hi);
+        this.dr(ctx, 14, 12, 2, 1, hi);
+        // darker between waves
+        this.dp(ctx, 5, 5, dk);
+        this.dp(ctx, 11, 10, dk);
+        this.dp(ctx, 3, 15, dk);
+        this.dp(ctx, 9, 0, dk);
+        this.dp(ctx, 14, 5, dk);
+        ct.refresh();
+    }
+
+    /** tile_tall_grass - dark green with visible upward grass blade strokes */
+    private genTallGrass(): void {
+        const { ctx, ct } = this.makeTile('tile_tall_grass');
+        // darker base
+        this.dr(ctx, 0, 0, T, T, 0x2d5e18);
+        const tg = COLORS.TALL_GRASS;
+        const lg = COLORS.GRASS;
+        // V-shaped blade at x=2
+        this.dp(ctx, 2, 2, lg); this.dp(ctx, 1, 3, tg); this.dp(ctx, 3, 3, tg);
+        this.dp(ctx, 0, 4, tg); this.dp(ctx, 4, 4, tg);
+        // V-shaped blade at x=7
+        this.dp(ctx, 7, 1, lg); this.dp(ctx, 6, 2, tg); this.dp(ctx, 8, 2, tg);
+        this.dp(ctx, 5, 3, tg); this.dp(ctx, 9, 3, tg);
+        // V-shaped blade at x=12
+        this.dp(ctx, 12, 0, lg); this.dp(ctx, 11, 1, tg); this.dp(ctx, 13, 1, tg);
+        this.dp(ctx, 10, 2, tg); this.dp(ctx, 14, 2, tg);
+        // smaller blade at x=4
+        this.dp(ctx, 4, 7, lg); this.dp(ctx, 3, 8, tg); this.dp(ctx, 5, 8, tg);
+        // smaller blade at x=10
+        this.dp(ctx, 10, 6, lg); this.dp(ctx, 9, 7, tg); this.dp(ctx, 11, 7, tg);
+        // vertical blade strokes from bottom
+        this.dr(ctx, 1, 6, 1, 10, tg);
+        this.dr(ctx, 5, 5, 1, 11, tg);
+        this.dr(ctx, 9, 4, 1, 12, tg);
+        this.dr(ctx, 13, 3, 1, 13, tg);
+        this.dr(ctx, 15, 5, 1, 11, tg);
+        // bright tips
+        this.dp(ctx, 7, 0, 0x7bcc5e);
+        this.dp(ctx, 2, 1, 0x7bcc5e);
+        ct.refresh();
+    }
+
+    /** tile_tree_trunk - grass base with centred brown trunk and bark detail */
+    private genTreeTrunk(): void {
+        const { ctx, ct } = this.makeTile('tile_tree_trunk');
+        // grass bg
+        this.dr(ctx, 0, 0, T, T, COLORS.GRASS);
+        // shadow at base
+        this.dr(ctx, 3, 12, 10, 4, COLORS.GRASS_DARK);
+        // trunk (6px wide, full height)
+        this.dr(ctx, 5, 0, 6, 16, COLORS.TREE_TRUNK);
+        // bark darker lines
+        this.dr(ctx, 6, 0, 1, 16, 0x5a3216);
+        this.dr(ctx, 9, 0, 1, 16, 0x5a3216);
+        // bark highlight
+        this.dr(ctx, 7, 0, 1, 16, 0x7b5236);
+        // knot detail
+        this.dp(ctx, 7, 5, 0x5a3216);
+        this.dp(ctx, 8, 5, 0x5a3216);
+        this.dp(ctx, 8, 10, 0x5a3216);
+        // roots
+        this.dp(ctx, 4, 14, COLORS.TREE_TRUNK);
+        this.dp(ctx, 4, 15, COLORS.TREE_TRUNK);
+        this.dp(ctx, 11, 14, COLORS.TREE_TRUNK);
+        this.dp(ctx, 11, 15, COLORS.TREE_TRUNK);
+        // grass noise
+        this.dp(ctx, 2, 10, COLORS.GRASS_DARK);
+        this.dp(ctx, 13, 8, COLORS.GRASS_DARK);
+        ct.refresh();
+    }
+
+    /** tile_tree_top - dark green circular canopy filling the tile */
+    private genTreeTop(): void {
+        const { ctx, ct } = this.makeTile('tile_tree_top');
+        const lv = COLORS.TREE_LEAVES;
+        // rounded canopy shape
+        this.dr(ctx, 4, 0, 8, 1, lv);
+        this.dr(ctx, 2, 1, 12, 1, lv);
+        this.dr(ctx, 1, 2, 14, 2, lv);
+        this.dr(ctx, 0, 4, 16, 8, lv);
+        this.dr(ctx, 1, 12, 14, 2, lv);
+        this.dr(ctx, 2, 14, 12, 1, lv);
+        this.dr(ctx, 4, 15, 8, 1, lv);
+        // lighter highlight patches
+        const hi = 0x3d8e2e;
+        this.dr(ctx, 4, 3, 3, 2, hi);
+        this.dr(ctx, 9, 5, 4, 2, hi);
+        this.dr(ctx, 3, 8, 2, 2, hi);
+        this.dr(ctx, 10, 10, 3, 2, hi);
+        this.dr(ctx, 6, 12, 2, 1, hi);
+        // bright specks
+        this.dp(ctx, 5, 4, 0x4dae3e);
+        this.dp(ctx, 10, 6, 0x4dae3e);
+        this.dp(ctx, 4, 9, 0x4dae3e);
+        // darker shadow in centre
+        this.dp(ctx, 7, 7, 0x1d5e0e);
+        this.dp(ctx, 8, 8, 0x1d5e0e);
+        ct.refresh();
+    }
+
+    /** tile_fence - grass base with two vertical posts and two horizontal rails */
+    private genFence(): void {
+        const { ctx, ct } = this.makeTile('tile_fence');
+        this.dr(ctx, 0, 0, T, T, COLORS.GRASS);
+        const fc = COLORS.FENCE;
+        // posts
+        this.dr(ctx, 1, 2, 2, 12, fc);
+        this.dr(ctx, 13, 2, 2, 12, fc);
+        // horizontal rails
+        this.dr(ctx, 0, 4, T, 2, fc);
+        this.dr(ctx, 0, 10, T, 2, fc);
+        // post caps (lighter)
+        this.dr(ctx, 1, 1, 2, 1, 0x6a5a4a);
+        this.dr(ctx, 13, 1, 2, 1, 0x6a5a4a);
+        // nail details (dark)
+        this.dp(ctx, 4, 5, 0x3a2a1a);
+        this.dp(ctx, 9, 5, 0x3a2a1a);
+        this.dp(ctx, 5, 11, 0x3a2a1a);
+        this.dp(ctx, 11, 11, 0x3a2a1a);
+        // grass peeking
+        this.dp(ctx, 7, 14, COLORS.GRASS_DARK);
+        ct.refresh();
+    }
+
+    /** tile_building_wall - stone wall with brick mortar pattern */
+    private genBuildingWall(): void {
+        const { ctx, ct } = this.makeTile('tile_building_wall');
+        this.dr(ctx, 0, 0, T, T, COLORS.BUILDING_WALL);
+        const m = 0x6a5a4a; // mortar
+        // horizontal mortar lines
+        this.dr(ctx, 0, 4, T, 1, m);
+        this.dr(ctx, 0, 8, T, 1, m);
+        this.dr(ctx, 0, 12, T, 1, m);
+        // vertical mortar - row 0 pattern
+        this.dr(ctx, 8, 0, 1, 4, m);
+        // row 1 offset
+        this.dr(ctx, 0, 5, 1, 3, m);
+        this.dr(ctx, 4, 5, 1, 3, m);
+        this.dr(ctx, 12, 5, 1, 3, m);
+        // row 2 same as row 0
+        this.dr(ctx, 8, 9, 1, 3, m);
+        // row 3 offset
+        this.dr(ctx, 4, 13, 1, 3, m);
+        this.dr(ctx, 12, 13, 1, 3, m);
+        // brick highlights
+        this.dp(ctx, 2, 1, 0x9a8a7a);
+        this.dp(ctx, 10, 6, 0x9a8a7a);
+        this.dp(ctx, 6, 10, 0x9a8a7a);
+        this.dp(ctx, 1, 14, 0x9a8a7a);
+        ct.refresh();
+    }
+
+    /** tile_building_roof - dark brown with horizontal shingle rows */
+    private genBuildingRoof(): void {
+        const { ctx, ct } = this.makeTile('tile_building_roof');
+        this.dr(ctx, 0, 0, T, T, COLORS.BUILDING_ROOF);
+        const ridge = 0x5a4a3e;
+        const shadow = 0x3a2a1e;
+        // shingle row lines (lighter ridge, darker shadow)
+        for (let row = 0; row < 4; row++) {
+            const y = row * 4;
+            this.dr(ctx, 0, y, T, 1, ridge);
+            this.dr(ctx, 0, y + 3, T, 1, shadow);
+        }
+        // staggered vertical edges
+        this.dr(ctx, 4, 0, 1, 4, ridge);
+        this.dr(ctx, 12, 0, 1, 4, ridge);
+        this.dr(ctx, 0, 4, 1, 4, ridge);
+        this.dr(ctx, 8, 4, 1, 4, ridge);
+        this.dr(ctx, 4, 8, 1, 4, ridge);
+        this.dr(ctx, 12, 8, 1, 4, ridge);
+        this.dr(ctx, 0, 12, 1, 4, ridge);
+        this.dr(ctx, 8, 12, 1, 4, ridge);
+        ct.refresh();
+    }
+
+    /** tile_door - brown wooden door with frame and gold handle */
+    private genDoor(): void {
+        const { ctx, ct } = this.makeTile('tile_door');
+        // frame
+        this.dr(ctx, 0, 0, T, T, 0x7a5a3a);
+        // door panel
+        this.dr(ctx, 2, 1, 12, 15, COLORS.DOOR);
+        // top frame bar
+        this.dr(ctx, 0, 0, T, 1, 0x8a6a4a);
+        // side frames
+        this.dr(ctx, 0, 0, 2, T, 0x8a6a4a);
+        this.dr(ctx, 14, 0, 2, T, 0x8a6a4a);
+        // centre divider
+        this.dr(ctx, 7, 1, 2, 15, 0x7a5a3a);
+        // darker recessed panels
+        this.dr(ctx, 3, 2, 4, 13, 0x4a2a0a);
+        this.dr(ctx, 9, 2, 4, 13, 0x4a2a0a);
+        // panel detail lines
+        this.dp(ctx, 4, 5, 0x5a3a1a);
+        this.dp(ctx, 10, 5, 0x5a3a1a);
+        this.dp(ctx, 4, 10, 0x5a3a1a);
+        this.dp(ctx, 10, 10, 0x5a3a1a);
+        // gold door handle
+        this.dr(ctx, 10, 8, 2, 2, P_BELT);
+        this.dp(ctx, 11, 9, P_BELT_HI);
+        ct.refresh();
+    }
+
+    /** tile_flower - grass base with small colourful cross-shaped flowers */
+    private genFlower(): void {
+        const { ctx, ct } = this.makeTile('tile_flower');
+        this.dr(ctx, 0, 0, T, T, COLORS.GRASS);
+        // grass noise
+        this.dp(ctx, 3, 5, COLORS.GRASS_DARK);
+        this.dp(ctx, 10, 2, COLORS.GRASS_DARK);
+        this.dp(ctx, 7, 12, COLORS.GRASS_DARK);
+        // red flower cross at (3,4)
+        this.dp(ctx, 3, 3, 0xee3333);
+        this.dp(ctx, 2, 4, 0xee3333);
+        this.dp(ctx, 3, 4, 0xff5555);
+        this.dp(ctx, 4, 4, 0xee3333);
+        this.dp(ctx, 3, 5, 0xee3333);
+        this.dr(ctx, 3, 6, 1, 2, 0x2d6e1e); // stem
+        // yellow flower cross at (10,8)
+        this.dp(ctx, 10, 7, 0xffdd33);
+        this.dp(ctx, 9, 8, 0xffdd33);
+        this.dp(ctx, 10, 8, 0xffee55);
+        this.dp(ctx, 11, 8, 0xffdd33);
+        this.dp(ctx, 10, 9, 0xffdd33);
+        this.dr(ctx, 10, 10, 1, 2, 0x2d6e1e);
+        // white flower at (7,2)
+        this.dp(ctx, 7, 1, 0xffffff);
+        this.dp(ctx, 6, 2, 0xffffff);
+        this.dp(ctx, 7, 2, 0xffdd33); // centre
+        this.dp(ctx, 8, 2, 0xffffff);
+        this.dp(ctx, 7, 3, 0xffffff);
+        this.dr(ctx, 7, 4, 1, 2, 0x2d6e1e);
+        // pink dot flower at (13,12)
+        this.dp(ctx, 13, 11, 0xee5599);
+        this.dp(ctx, 12, 12, 0xee5599);
+        this.dp(ctx, 13, 12, 0xff77bb);
+        this.dp(ctx, 14, 12, 0xee5599);
+        this.dr(ctx, 13, 13, 1, 2, 0x2d6e1e);
+        ct.refresh();
+    }
+
+    /** tile_sign - grass base with wooden post and sign board */
+    private genSign(): void {
+        const { ctx, ct } = this.makeTile('tile_sign');
+        this.dr(ctx, 0, 0, T, T, COLORS.GRASS);
+        this.dp(ctx, 3, 13, COLORS.GRASS_DARK);
+        this.dp(ctx, 12, 11, COLORS.GRASS_DARK);
+        // vertical post
+        this.dr(ctx, 7, 6, 2, 10, 0x6b4226);
+        // sign board
+        this.dr(ctx, 2, 1, 12, 6, 0x8b6914);
+        // board border
+        this.dr(ctx, 2, 1, 12, 1, 0x6b4226);
+        this.dr(ctx, 2, 6, 12, 1, 0x6b4226);
+        this.dr(ctx, 2, 1, 1, 6, 0x6b4226);
+        this.dr(ctx, 13, 1, 1, 6, 0x6b4226);
+        // text lines
+        this.dr(ctx, 4, 3, 5, 1, 0x333333);
+        this.dr(ctx, 4, 5, 3, 1, 0x333333);
+        ct.refresh();
+    }
+
+    /** tile_bridge - horizontal wooden planks over water with side rails */
+    private genBridge(): void {
+        const { ctx, ct } = this.makeTile('tile_bridge');
+        // water peeking through gaps
+        this.dr(ctx, 0, 0, T, T, COLORS.WATER);
+        const plank = 0x8b6914;
+        const grain = 0x7b5904;
+        const gap = 0x5b3904;
+        // 4 planks
+        this.dr(ctx, 0, 0, T, 3, plank);
+        this.dr(ctx, 0, 4, T, 3, plank);
+        this.dr(ctx, 0, 8, T, 3, plank);
+        this.dr(ctx, 0, 12, T, 3, plank);
+        // grain detail per plank
+        this.dr(ctx, 3, 1, 4, 1, grain);
+        this.dr(ctx, 10, 5, 3, 1, grain);
+        this.dr(ctx, 1, 9, 5, 1, grain);
+        this.dr(ctx, 8, 13, 4, 1, grain);
+        // dark gap lines between planks
+        this.dr(ctx, 0, 3, T, 1, gap);
+        this.dr(ctx, 0, 7, T, 1, gap);
+        this.dr(ctx, 0, 11, T, 1, gap);
+        this.dr(ctx, 0, 15, T, 1, gap);
+        // side rails
+        this.dr(ctx, 0, 0, 1, T, 0x6b4226);
+        this.dr(ctx, 15, 0, 1, T, 0x6b4226);
+        ct.refresh();
+    }
+
+    /** tile_stairs - alternating light/dark stone steps */
+    private genStairs(): void {
+        const { ctx, ct } = this.makeTile('tile_stairs');
+        this.dr(ctx, 0, 0, T, T, 0x888888);
+        const STEP_H = 4;
+        for (let row = 0; row < 4; row++) {
+            const y = row * STEP_H;
+            // step top highlight
+            this.dr(ctx, 0, y, T, 1, 0x999999);
+            // step face alternating shade
+            this.dr(ctx, 0, y + 1, T, STEP_H - 2, row % 2 === 0 ? 0x7a7a7a : 0x6a6a6a);
+            // shadow at bottom of step
+            this.dr(ctx, 0, y + STEP_H - 1, T, 1, 0x555555);
+        }
+        // crack details
+        this.dp(ctx, 5, 1, 0x666666);
+        this.dp(ctx, 11, 6, 0x666666);
+        this.dp(ctx, 3, 10, 0x666666);
+        this.dp(ctx, 13, 14, 0x666666);
+        ct.refresh();
+    }
+
+    /** tile_roof_red - Korean-style red roof tiles with ridge pattern */
+    private genRoofRed(): void {
+        const { ctx, ct } = this.makeTile('tile_roof_red');
+        this.dr(ctx, 0, 0, T, T, COLORS.BUILDING_ROOF_RED);
+        const dk = 0x7b2a2a;
+        const hi = 0x9b4a4a;
+        // horizontal ridge lines
+        this.dr(ctx, 0, 3, T, 1, dk);
+        this.dr(ctx, 0, 7, T, 1, dk);
+        this.dr(ctx, 0, 11, T, 1, dk);
+        this.dr(ctx, 0, 15, T, 1, dk);
+        // tile curve highlights
+        this.dr(ctx, 2, 1, 4, 1, hi);
+        this.dr(ctx, 10, 1, 4, 1, hi);
+        this.dr(ctx, 6, 5, 4, 1, hi);
+        this.dr(ctx, 14, 5, 2, 1, hi);
+        this.dr(ctx, 0, 5, 2, 1, hi);
+        this.dr(ctx, 2, 9, 4, 1, hi);
+        this.dr(ctx, 10, 9, 4, 1, hi);
+        this.dr(ctx, 6, 13, 4, 1, hi);
+        // staggered vertical dividers
+        this.dr(ctx, 4, 0, 1, 3, dk);
+        this.dr(ctx, 12, 0, 1, 3, dk);
+        this.dr(ctx, 0, 4, 1, 3, dk);
+        this.dr(ctx, 8, 4, 1, 3, dk);
+        this.dr(ctx, 4, 8, 1, 3, dk);
+        this.dr(ctx, 12, 8, 1, 3, dk);
+        this.dr(ctx, 0, 12, 1, 3, dk);
+        this.dr(ctx, 8, 12, 1, 3, dk);
+        ct.refresh();
+    }
+
+    // ----------------------------------------------------------------
+    //  Player spritesheet  (48 x 64, 3 cols x 4 rows of 16x16 frames)
+    // ----------------------------------------------------------------
+
+    /**
+     * Generate the player spritesheet as a single canvas texture
+     * with 12 frames arranged in a 3x4 grid:
+     *   Row 0 = down,  Row 1 = up,  Row 2 = left,  Row 3 = right
+     *   Col 0 = stand, Col 1 = walk-A, Col 2 = walk-B
+     */
+    private generatePlayerSpritesheet(): void {
+        const sw = SHEET_COLS * T; // 48
+        const sh = SHEET_ROWS * T; // 64
+        const ct = this.textures.createCanvas('player_sheet', sw, sh);
+        if (!ct) {
+            throw new Error('Failed to create player_sheet canvas texture');
+        }
+        const ctx = ct.getContext();
+
+        // Draw all 12 frames
+        for (let row = 0; row < SHEET_ROWS; row++) {
+            for (let col = 0; col < SHEET_COLS; col++) {
+                const ox = col * T;
+                const oy = row * T;
+                this.drawPlayerFrame(ctx, ox, oy, row, col);
+            }
+        }
+
+        ct.refresh();
+
+        // Register individual numbered frames for animation system
+        const tex = this.textures.get('player_sheet');
+        let idx = 0;
+        for (let row = 0; row < SHEET_ROWS; row++) {
+            for (let col = 0; col < SHEET_COLS; col++) {
+                tex.add(idx, 0, col * T, row * T, T, T);
+                idx++;
+            }
+        }
+
+        Logger.debug('PreloaderScene', 'Player spritesheet generated (12 frames)');
+    }
+
+    /**
+     * Draw a single 16x16 player frame onto the spritesheet canvas.
+     * @param ctx - 2D canvas rendering context
+     * @param ox - X pixel offset for this frame
+     * @param oy - Y pixel offset for this frame
+     * @param dir - Direction row (0=down, 1=up, 2=left, 3=right)
+     * @param frame - Animation column (0=stand, 1=walk-A, 2=walk-B)
+     */
+    private drawPlayerFrame(
+        ctx: CanvasRenderingContext2D,
+        ox: number, oy: number,
+        dir: number, frame: number,
+    ): void {
+        switch (dir) {
+            case 0: this.drawPlayerDown(ctx, ox, oy, frame); break;
+            case 1: this.drawPlayerUp(ctx, ox, oy, frame); break;
+            case 2: this.drawPlayerLeft(ctx, ox, oy, frame); break;
+            case 3: this.drawPlayerRight(ctx, ox, oy, frame); break;
+        }
+    }
+
+    /**
+     * Draw the player facing down (front view).
+     * Large head with hair and eyes, blue outfit, legs animate per frame.
+     */
+    private drawPlayerDown(
+        ctx: CanvasRenderingContext2D,
+        ox: number, oy: number, frame: number,
+    ): void {
+        // Hair
+        this.dr(ctx, ox + 3, oy + 1, 10, 3, P_HAIR);
+        this.dp(ctx, ox + 7, oy + 1, P_HAIR_HI);
+        // Face
+        this.dr(ctx, ox + 3, oy + 4, 10, 3, P_SKIN);
         // Eyes
-        g.fillStyle(0x111111, 1);
-        g.fillRect(13, 8, 2, 2);
-        g.fillRect(18, 8, 2, 2);
-
-        // Belt (gold sash)
-        g.fillStyle(0xddaa33, 1);
-        g.fillRect(8, 28, 16, 3);
-
-        // Pants
-        g.fillStyle(0x1a1a44, 1);
-        g.fillRect(8, 31, 7, 12);
-        g.fillRect(17, 31, 7, 12);
-
-        // Boots
-        g.fillStyle(0x443322, 1);
-        g.fillRect(8, 41, 7, 5);
-        g.fillRect(17, 41, 7, 5);
-
-        // Arms
-        g.fillStyle(0x2233aa, 1);
-        g.fillRect(4, 18, 4, 12);
-        g.fillRect(24, 18, 4, 12);
-
-        // Hands
-        g.fillStyle(0xddbb88, 1);
-        g.fillRect(4, 28, 4, 4);
-        g.fillRect(24, 28, 4, 4);
-
-        // Sword on back (thin line)
-        g.fillStyle(0x888899, 1);
-        g.fillRect(25, 6, 2, 22);
-        g.fillStyle(0xddaa33, 1);
-        g.fillRect(25, 26, 2, 4);
-
-        g.generateTexture('player1', w, h);
-        g.destroy();
-    }
-
-    /** Create player 2 (소율) pixel art character */
-    private createPlayer2Texture(): void {
-        const g = this.add.graphics();
-        const w = 28;
-        const h = 44;
-
-        // Body - teal hanbok
-        g.fillStyle(0x008877, 1);
-        g.fillRect(6, 14, 16, 18);
-
-        // Head
-        g.fillStyle(0xddbb88, 1);
-        g.fillRect(8, 3, 12, 11);
-
-        // Hair (long, flowing)
-        g.fillStyle(0x332211, 1);
-        g.fillRect(7, 1, 14, 7);
-        g.fillRect(6, 6, 4, 12);
-        g.fillRect(18, 6, 4, 12);
-
-        // Eyes
-        g.fillStyle(0x111111, 1);
-        g.fillRect(11, 7, 2, 2);
-        g.fillRect(16, 7, 2, 2);
-
+        this.dp(ctx, ox + 5, oy + 5, P_EYE);
+        this.dp(ctx, ox + 10, oy + 5, P_EYE);
+        // Body
+        this.dr(ctx, ox + 4, oy + 7, 8, 3, P_SHIRT);
+        this.dp(ctx, ox + 7, oy + 8, P_SHIRT_DK); // fold
         // Belt
-        g.fillStyle(0xcc6688, 1);
-        g.fillRect(6, 26, 16, 3);
-
-        // Pants
-        g.fillStyle(0x005544, 1);
-        g.fillRect(6, 29, 7, 10);
-        g.fillRect(15, 29, 7, 10);
-
-        // Boots
-        g.fillStyle(0x443322, 1);
-        g.fillRect(6, 37, 7, 5);
-        g.fillRect(15, 37, 7, 5);
-
-        // Arms
-        g.fillStyle(0x008877, 1);
-        g.fillRect(2, 16, 4, 10);
-        g.fillRect(22, 16, 4, 10);
-
-        // Daggers at waist
-        g.fillStyle(0x999999, 1);
-        g.fillRect(3, 24, 2, 6);
-        g.fillRect(23, 24, 2, 6);
-
-        g.generateTexture('player2', w, h);
-        g.destroy();
+        this.dr(ctx, ox + 4, oy + 10, 8, 1, P_BELT);
+        this.dp(ctx, ox + 8, oy + 10, P_BELT_HI);
+        // Legs & feet vary by walk frame
+        const legL = frame === 1 ? -1 : 0;
+        const legR = frame === 2 ? 1 : 0;
+        // left leg
+        this.dr(ctx, ox + 4 + legL, oy + 11, 3, 3, P_PANTS);
+        this.dr(ctx, ox + 4 + legL, oy + 13, 3, 1, P_BOOT);
+        // right leg
+        this.dr(ctx, ox + 9 + legR, oy + 11, 3, 3, P_PANTS);
+        this.dr(ctx, ox + 9 + legR, oy + 13, 3, 1, P_BOOT);
     }
 
-    /** Create NPC pixel art textures */
-    private createNPCTextures(): void {
-        // Innkeeper - warm brown, rounder
-        this.createNPCSprite('npc_innkeeper', 0x885533, 0xffaa44, 0xddbb88, true);
-        // Merchant - green with gold accents
-        this.createNPCSprite('npc_merchant', 0x336633, 0xddaa33, 0xddbb88, false);
-        // Fortune teller - purple mystical
-        this.createNPCSprite('npc_fortune_teller', 0x553388, 0xdd44ff, 0xccbb99, false);
-        // Weaponsmith - dark, muscular
-        this.createNPCSprite('npc_weaponsmith', 0x444444, 0xff6633, 0xcc9977, true);
-        // Quest board
-        this.createQuestBoardTexture();
-        // Default NPC
-        this.createNPCSprite('npc_default', 0x666655, 0xaaaaaa, 0xddbb88, false);
-    }
-
-    /** Create a single NPC sprite */
-    private createNPCSprite(key: string, bodyColor: number, accentColor: number, skinColor: number, isWide: boolean): void {
-        const g = this.add.graphics();
-        const w = isWide ? 36 : 32;
-        const h = 48;
-        const cx = w / 2;
-
+    /**
+     * Draw the player facing up (back view).
+     * More hair visible, no facial features.
+     */
+    private drawPlayerUp(
+        ctx: CanvasRenderingContext2D,
+        ox: number, oy: number, frame: number,
+    ): void {
+        // Hair (covers entire back of head - taller)
+        this.dr(ctx, ox + 3, oy + 1, 10, 4, P_HAIR);
+        this.dp(ctx, ox + 6, oy + 2, P_HAIR_HI);
+        // Tiny neck
+        this.dr(ctx, ox + 5, oy + 5, 6, 1, P_SKIN);
+        // Back of collar
+        this.dr(ctx, ox + 5, oy + 6, 6, 1, 0xeeddcc);
         // Body
-        g.fillStyle(bodyColor, 1);
-        g.fillRect(cx - 8, 16, 16, 20);
+        this.dr(ctx, ox + 4, oy + 7, 8, 3, P_SHIRT);
+        this.dp(ctx, ox + 8, oy + 8, P_SHIRT_DK);
+        // Belt
+        this.dr(ctx, ox + 4, oy + 10, 8, 1, P_BELT);
+        // Legs & feet
+        const legL = frame === 1 ? -1 : 0;
+        const legR = frame === 2 ? 1 : 0;
+        this.dr(ctx, ox + 4 + legL, oy + 11, 3, 3, P_PANTS);
+        this.dr(ctx, ox + 4 + legL, oy + 13, 3, 1, P_BOOT);
+        this.dr(ctx, ox + 9 + legR, oy + 11, 3, 3, P_PANTS);
+        this.dr(ctx, ox + 9 + legR, oy + 13, 3, 1, P_BOOT);
+    }
 
-        // Head
-        g.fillStyle(skinColor, 1);
-        g.fillRect(cx - 6, 4, 12, 12);
+    /**
+     * Draw the player facing left (profile).
+     * Narrower body, one eye visible, arm on left side.
+     */
+    private drawPlayerLeft(
+        ctx: CanvasRenderingContext2D,
+        ox: number, oy: number, frame: number,
+    ): void {
+        // Hair (profile, shifted left)
+        this.dr(ctx, ox + 3, oy + 1, 9, 3, P_HAIR);
+        this.dp(ctx, ox + 5, oy + 1, P_HAIR_HI);
+        // Face (profile, extends left)
+        this.dr(ctx, ox + 2, oy + 4, 9, 3, P_SKIN);
+        // One eye
+        this.dp(ctx, ox + 4, oy + 5, P_EYE);
+        // Body (narrower)
+        this.dr(ctx, ox + 4, oy + 7, 7, 3, P_SHIRT);
+        // Arm
+        this.dr(ctx, ox + 3, oy + 7, 1, 4, P_SHIRT_DK);
+        // Belt
+        this.dr(ctx, ox + 4, oy + 10, 7, 1, P_BELT);
+        // Legs - for left walking, legs spread front-back
+        if (frame === 0) {
+            // stand: legs together
+            this.dr(ctx, ox + 5, oy + 11, 4, 3, P_PANTS);
+            this.dr(ctx, ox + 5, oy + 13, 4, 1, P_BOOT);
+        } else if (frame === 1) {
+            // walk A: legs apart
+            this.dr(ctx, ox + 3, oy + 11, 3, 3, P_PANTS);
+            this.dr(ctx, ox + 3, oy + 13, 3, 1, P_BOOT);
+            this.dr(ctx, ox + 8, oy + 11, 3, 3, P_PANTS);
+            this.dr(ctx, ox + 8, oy + 13, 3, 1, P_BOOT);
+        } else {
+            // walk B: legs apart (opposite emphasis)
+            this.dr(ctx, ox + 3, oy + 11, 3, 2, P_PANTS);
+            this.dr(ctx, ox + 3, oy + 12, 3, 1, P_BOOT);
+            this.dr(ctx, ox + 8, oy + 11, 3, 3, P_PANTS);
+            this.dr(ctx, ox + 8, oy + 13, 3, 1, P_BOOT);
+        }
+    }
 
-        // Hair/hat
-        g.fillStyle(0x333333, 1);
-        g.fillRect(cx - 7, 2, 14, 6);
+    /**
+     * Draw the player facing right (mirrored profile).
+     * Narrower body, one eye visible, arm on right side.
+     */
+    private drawPlayerRight(
+        ctx: CanvasRenderingContext2D,
+        ox: number, oy: number, frame: number,
+    ): void {
+        // Hair (profile, shifted right)
+        this.dr(ctx, ox + 4, oy + 1, 9, 3, P_HAIR);
+        this.dp(ctx, ox + 10, oy + 1, P_HAIR_HI);
+        // Face (profile, extends right)
+        this.dr(ctx, ox + 5, oy + 4, 9, 3, P_SKIN);
+        // One eye
+        this.dp(ctx, ox + 11, oy + 5, P_EYE);
+        // Body (narrower)
+        this.dr(ctx, ox + 5, oy + 7, 7, 3, P_SHIRT);
+        // Arm
+        this.dr(ctx, ox + 12, oy + 7, 1, 4, P_SHIRT_DK);
+        // Belt
+        this.dr(ctx, ox + 5, oy + 10, 7, 1, P_BELT);
+        // Legs - mirror of left
+        if (frame === 0) {
+            this.dr(ctx, ox + 7, oy + 11, 4, 3, P_PANTS);
+            this.dr(ctx, ox + 7, oy + 13, 4, 1, P_BOOT);
+        } else if (frame === 1) {
+            this.dr(ctx, ox + 5, oy + 11, 3, 3, P_PANTS);
+            this.dr(ctx, ox + 5, oy + 13, 3, 1, P_BOOT);
+            this.dr(ctx, ox + 10, oy + 11, 3, 3, P_PANTS);
+            this.dr(ctx, ox + 10, oy + 13, 3, 1, P_BOOT);
+        } else {
+            this.dr(ctx, ox + 5, oy + 11, 3, 3, P_PANTS);
+            this.dr(ctx, ox + 5, oy + 13, 3, 1, P_BOOT);
+            this.dr(ctx, ox + 10, oy + 11, 3, 2, P_PANTS);
+            this.dr(ctx, ox + 10, oy + 12, 3, 1, P_BOOT);
+        }
+    }
 
+    // ----------------------------------------------------------------
+    //  NPC textures  (16x16 single frames)
+    // ----------------------------------------------------------------
+
+    /** Generate the four NPC textures (npc_1 .. npc_4) */
+    private generateNPCTextures(): void {
+        for (let i = 0; i < NPC_PALETTES.length; i++) {
+            const [body, accent, hair, hat] = NPC_PALETTES[i];
+            this.drawNPC(`npc_${i + 1}`, body, accent, hair, hat);
+        }
+        Logger.debug('PreloaderScene', '4 NPC textures generated');
+    }
+
+    /**
+     * Draw a single NPC texture (16x16, facing down).
+     * @param key - Texture key to register
+     * @param body - Main outfit colour
+     * @param accent - Belt/sash accent colour
+     * @param hair - Hair colour
+     * @param hat - Hat/headwear colour
+     */
+    private drawNPC(
+        key: string,
+        body: number, accent: number,
+        hair: number, hat: number,
+    ): void {
+        const ct = this.textures.createCanvas(key, T, T);
+        if (!ct) {
+            throw new Error(`Failed to create NPC canvas texture: ${key}`);
+        }
+        const ctx = ct.getContext();
+
+        // Hat
+        this.dr(ctx, 3, 0, 10, 2, hat);
+        // Hair under hat
+        this.dr(ctx, 4, 2, 8, 1, hair);
+        // Face
+        this.dr(ctx, 3, 3, 10, 3, P_SKIN);
         // Eyes
-        g.fillStyle(0x111111, 1);
-        g.fillRect(cx - 3, 8, 2, 2);
-        g.fillRect(cx + 2, 8, 2, 2);
-
-        // Accent (belt/scarf)
-        g.fillStyle(accentColor, 1);
-        g.fillRect(cx - 8, 28, 16, 3);
-
-        // Legs
-        g.fillStyle(bodyColor, 0.8);
-        g.fillRect(cx - 7, 31, 6, 12);
-        g.fillRect(cx + 1, 31, 6, 12);
-
-        // Feet
-        g.fillStyle(0x443322, 1);
-        g.fillRect(cx - 7, 41, 6, 5);
-        g.fillRect(cx + 1, 41, 6, 5);
-
-        g.generateTexture(key, w, h);
-        g.destroy();
-    }
-
-    /** Create quest board texture */
-    private createQuestBoardTexture(): void {
-        const g = this.add.graphics();
-        // Wooden board
-        g.fillStyle(0x664422, 1);
-        g.fillRect(4, 4, 24, 36);
-        // Posts
-        g.fillStyle(0x553311, 1);
-        g.fillRect(2, 0, 4, 44);
-        g.fillRect(26, 0, 4, 44);
-        // Papers
-        g.fillStyle(0xeeddcc, 1);
-        g.fillRect(8, 8, 8, 10);
-        g.fillRect(18, 8, 8, 10);
-        g.fillRect(10, 22, 10, 10);
-        // Text lines on papers
-        g.fillStyle(0x333333, 1);
-        g.fillRect(9, 10, 6, 1);
-        g.fillRect(9, 13, 5, 1);
-        g.fillRect(19, 10, 6, 1);
-        g.fillRect(19, 13, 5, 1);
-        g.generateTexture('npc_quest_board', 32, 44);
-        g.destroy();
-    }
-
-    /** Create enemy textures */
-    private createEnemyTextures(): void {
-        // Bandit
-        this.createEnemySprite('enemy_bandit', 0x774422, 0xaa6633, 40, 44);
-        // Taebong soldier
-        this.createEnemySprite('enemy_soldier_taebong', 0x442288, 0x6633aa, 40, 48);
-        // Hubaekje soldier
-        this.createEnemySprite('enemy_soldier_hubaekje', 0x882222, 0xaa3333, 40, 48);
-        // Fanatic
-        this.createEnemySprite('enemy_fanatic', 0x442266, 0xffdd00, 40, 48);
-        // Ghost
-        this.createGhostTexture();
-        // Pirate
-        this.createEnemySprite('enemy_pirate', 0x333333, 0xff6600, 40, 44);
-    }
-
-    /** Create a single enemy sprite */
-    private createEnemySprite(key: string, bodyColor: number, accentColor: number, w: number, h: number): void {
-        const g = this.add.graphics();
-        const cx = w / 2;
-
+        this.dp(ctx, 5, 4, P_EYE);
+        this.dp(ctx, 10, 4, P_EYE);
         // Body
-        g.fillStyle(bodyColor, 1);
-        g.fillRect(cx - 9, 14, 18, 20);
-
-        // Head
-        g.fillStyle(0xcc9966, 1);
-        g.fillRect(cx - 6, 2, 12, 12);
-
-        // Helmet/hat
-        g.fillStyle(accentColor, 1);
-        g.fillRect(cx - 7, 0, 14, 6);
-
-        // Red eyes
-        g.fillStyle(0xff2222, 1);
-        g.fillRect(cx - 3, 7, 2, 2);
-        g.fillRect(cx + 2, 7, 2, 2);
-
-        // Weapon (sword/spear)
-        g.fillStyle(0x999999, 1);
-        g.fillRect(cx + 10, 8, 2, 20);
-        g.fillStyle(accentColor, 1);
-        g.fillRect(cx + 9, 6, 4, 4);
-
+        this.dr(ctx, 4, 6, 8, 4, body);
+        // Accent sash
+        this.dr(ctx, 4, 9, 8, 1, accent);
         // Legs
-        g.fillStyle(bodyColor, 0.8);
-        g.fillRect(cx - 8, 34, 7, 10);
-        g.fillRect(cx + 1, 34, 7, 10);
+        this.dr(ctx, 4, 10, 3, 4, this.darken(body, 0.75));
+        this.dr(ctx, 9, 10, 3, 4, this.darken(body, 0.75));
+        // Feet
+        this.dr(ctx, 4, 13, 3, 1, P_BOOT);
+        this.dr(ctx, 9, 13, 3, 1, P_BOOT);
 
-        g.generateTexture(key, w, h);
-        g.destroy();
+        ct.refresh();
     }
 
-    /** Create ghost enemy texture */
-    private createGhostTexture(): void {
-        const g = this.add.graphics();
+    // ----------------------------------------------------------------
+    //  Animations
+    // ----------------------------------------------------------------
 
-        // Translucent body
-        g.fillStyle(0x8888cc, 0.7);
-        g.fillRect(8, 4, 24, 32);
-
-        // Wavy bottom
-        g.fillStyle(0x8888cc, 0.5);
-        g.fillRect(8, 32, 6, 8);
-        g.fillRect(16, 36, 6, 6);
-        g.fillRect(26, 32, 6, 8);
-
-        // Glowing eyes
-        g.fillStyle(0xffffff, 1);
-        g.fillRect(14, 12, 4, 4);
-        g.fillRect(22, 12, 4, 4);
-        g.fillStyle(0x4444ff, 1);
-        g.fillRect(15, 13, 2, 2);
-        g.fillRect(23, 13, 2, 2);
-
-        // Mouth
-        g.fillStyle(0x222244, 1);
-        g.fillRect(16, 22, 8, 4);
-
-        g.generateTexture('enemy_ghost', 40, 44);
-        g.destroy();
-    }
-
-    /** Create boss textures */
-    private createBossTextures(): void {
-        // Heukrang (흑랑) - dark wolf warrior
-        this.createBossSprite('boss_heukrang', 0x222244, 0x4488ff, 64, 72);
-        // Cheolkwon (철권) - iron fist
-        this.createBossSprite('boss_cheolkwon', 0x664422, 0xff6622, 72, 80);
-        // Janwol (잔월) - pale moon
-        this.createBossSprite('boss_janwol', 0x888899, 0xccccff, 64, 72);
-        // Jeok Myeong (적명)
-        this.createBossSprite('boss_jeok_myeong', 0x882222, 0xffdd00, 72, 80);
-        // Bukpung (북풍) - north wind
-        this.createBossSprite('boss_bukpung', 0x334466, 0x88ccff, 64, 72);
-        // Sasin (사신) - death god
-        this.createBossSprite('boss_sasin', 0x111111, 0xff0000, 72, 80);
-        // Gungye (궁예) - final boss
-        this.createGungyeTexture();
-    }
-
-    /** Create a boss sprite */
-    private createBossSprite(key: string, bodyColor: number, accentColor: number, w: number, h: number): void {
-        const g = this.add.graphics();
-        const cx = w / 2;
-
-        // Large body
-        g.fillStyle(bodyColor, 1);
-        g.fillRect(cx - 16, 20, 32, 32);
-
-        // Head
-        g.fillStyle(0xcc9966, 1);
-        g.fillRect(cx - 10, 4, 20, 16);
-
-        // Crown/helmet
-        g.fillStyle(accentColor, 1);
-        g.fillRect(cx - 12, 0, 24, 8);
-        g.fillRect(cx - 4, -4, 8, 6);
-
-        // Eyes (menacing)
-        g.fillStyle(accentColor, 1);
-        g.fillRect(cx - 6, 10, 4, 3);
-        g.fillRect(cx + 3, 10, 4, 3);
-
-        // Armor accent
-        g.fillStyle(accentColor, 0.8);
-        g.fillRect(cx - 18, 22, 4, 28);
-        g.fillRect(cx + 14, 22, 4, 28);
-
-        // Legs
-        g.fillStyle(bodyColor, 0.8);
-        g.fillRect(cx - 14, 52, 12, 16);
-        g.fillRect(cx + 2, 52, 12, 16);
-
-        // Cape
-        g.fillStyle(accentColor, 0.4);
-        g.fillRect(cx - 20, 16, 6, 40);
-        g.fillRect(cx + 14, 16, 6, 40);
-
-        g.generateTexture(key, w, h);
-        g.destroy();
-    }
-
-    /** Create Gungye (궁예) final boss texture */
-    private createGungyeTexture(): void {
-        const g = this.add.graphics();
-        const w = 80;
-        const h = 96;
-        const cx = w / 2;
-
-        // Flowing royal robe - purple
-        g.fillStyle(0x4a148c, 1);
-        g.fillRect(cx - 20, 28, 40, 44);
-
-        // Head
-        g.fillStyle(0xccaa88, 1);
-        g.fillRect(cx - 12, 8, 24, 20);
-
-        // Crown (elaborate)
-        g.fillStyle(0xffd700, 1);
-        g.fillRect(cx - 14, 2, 28, 10);
-        g.fillRect(cx - 6, -4, 4, 8);
-        g.fillRect(cx + 2, -4, 4, 8);
-        g.fillRect(cx - 2, -6, 4, 8);
-
-        // Third eye (관심법)
-        g.fillStyle(0xff0000, 1);
-        g.fillRect(cx - 2, 11, 4, 4);
-
-        // Normal eyes
-        g.fillStyle(0xffd700, 1);
-        g.fillRect(cx - 8, 16, 4, 3);
-        g.fillRect(cx + 4, 16, 4, 3);
-
-        // Gold trim
-        g.fillStyle(0xffd700, 1);
-        g.fillRect(cx - 22, 30, 44, 3);
-        g.fillRect(cx - 22, 50, 44, 3);
-
-        // Arms (wide sleeves)
-        g.fillStyle(0x4a148c, 1);
-        g.fillRect(cx - 30, 32, 12, 24);
-        g.fillRect(cx + 18, 32, 12, 24);
-
-        // Legs
-        g.fillStyle(0x330066, 1);
-        g.fillRect(cx - 16, 72, 14, 20);
-        g.fillRect(cx + 2, 72, 14, 20);
-
-        // Aura effect
-        g.fillStyle(0xffd700, 0.2);
-        g.fillRect(cx - 36, 0, 72, 92);
-
-        g.generateTexture('boss_gungye', w, h);
-        g.destroy();
-    }
-
-    /** Create environment/platform textures */
-    private createEnvironmentTextures(): void {
-        // Ground tile with grass
-        this.createGroundTile('tile_ground', 0x554433, 0x446633);
-        // Stone platform
-        this.createStonePlatform('tile_stone', 0x666666, 0x555555);
-        // Wood platform
-        this.createWoodPlatform('tile_wood', 0x775533, 0x664422);
-        // Background layers
-        this.createSkyTexture();
-        this.createMountainTexture();
-        this.createBuildingTextures();
-        // Lantern
-        this.createLanternTexture();
-        // Tree
-        this.createTreeTexture();
-    }
-
-    /** Create ground tile with grass on top */
-    private createGroundTile(key: string, dirtColor: number, grassColor: number): void {
-        const g = this.add.graphics();
-        // Dirt
-        g.fillStyle(dirtColor, 1);
-        g.fillRect(0, 4, 32, 28);
-        // Grass top
-        g.fillStyle(grassColor, 1);
-        g.fillRect(0, 0, 32, 6);
-        // Grass tufts
-        g.fillStyle(0x558844, 1);
-        g.fillRect(2, -2, 2, 4);
-        g.fillRect(10, -2, 2, 3);
-        g.fillRect(20, -3, 2, 5);
-        g.fillRect(28, -2, 2, 4);
-        // Dirt variation
-        g.fillStyle(0x665544, 1);
-        g.fillRect(5, 12, 4, 4);
-        g.fillRect(18, 18, 6, 4);
-        g.fillRect(8, 24, 4, 4);
-        g.generateTexture(key, 32, 32);
-        g.destroy();
-    }
-
-    /** Create stone platform tile */
-    private createStonePlatform(key: string, mainColor: number, darkColor: number): void {
-        const g = this.add.graphics();
-        g.fillStyle(mainColor, 1);
-        g.fillRect(0, 0, 32, 20);
-        // Stone cracks/lines
-        g.fillStyle(darkColor, 1);
-        g.fillRect(0, 0, 32, 2);
-        g.fillRect(8, 4, 1, 8);
-        g.fillRect(20, 6, 1, 10);
-        g.fillRect(0, 18, 32, 2);
-        // Highlight on top
-        g.fillStyle(0x888888, 1);
-        g.fillRect(0, 2, 32, 1);
-        g.generateTexture(key, 32, 20);
-        g.destroy();
-    }
-
-    /** Create wood platform tile */
-    private createWoodPlatform(key: string, mainColor: number, darkColor: number): void {
-        const g = this.add.graphics();
-        g.fillStyle(mainColor, 1);
-        g.fillRect(0, 0, 32, 20);
-        // Wood grain lines
-        g.fillStyle(darkColor, 1);
-        g.fillRect(0, 4, 32, 1);
-        g.fillRect(0, 10, 32, 1);
-        g.fillRect(0, 16, 32, 1);
-        // Plank edges
-        g.fillRect(7, 0, 1, 20);
-        g.fillRect(15, 0, 1, 20);
-        g.fillRect(24, 0, 1, 20);
-        // Top highlight
-        g.fillStyle(0x886644, 1);
-        g.fillRect(0, 0, 32, 2);
-        g.generateTexture(key, 32, 20);
-        g.destroy();
-    }
-
-    /** Create sky gradient texture */
-    private createSkyTexture(): void {
-        const g = this.add.graphics();
-        const w = 1;
-        const h = 400;
-        // Gradient from dark blue (top) to purple
-        for (let y = 0; y < h; y++) {
-            const t = y / h;
-            const r = Math.floor(20 + t * 25);
-            const gv = Math.floor(15 + t * 20);
-            const b = Math.floor(60 + t * 20);
-            const color = (r << 16) | (gv << 8) | b;
-            g.fillStyle(color, 1);
-            g.fillRect(0, y, w, 1);
-        }
-        g.generateTexture('bg_sky', w, h);
-        g.destroy();
-    }
-
-    /** Create mountain silhouette */
-    private createMountainTexture(): void {
-        const g = this.add.graphics();
-        const w = 320;
-        const h = 200;
-
-        // Far mountains (darker)
-        g.fillStyle(0x1a1a30, 1);
-        // Mountain 1
-        const peaks = [
-            { x: 0, peakY: 60 },
-            { x: 80, peakY: 20 },
-            { x: 160, peakY: 40 },
-            { x: 240, peakY: 10 },
-            { x: 320, peakY: 50 },
+    /**
+     * Create all 8 player animations (4 walk + 4 idle) using
+     * numbered frames from the player_sheet spritesheet.
+     */
+    private createAnimations(): void {
+        const dirs: { name: string; base: number }[] = [
+            { name: 'down', base: 0 },
+            { name: 'up', base: 3 },
+            { name: 'left', base: 6 },
+            { name: 'right', base: 9 },
         ];
-        for (let x = 0; x < w; x++) {
-            // Interpolate between peaks
-            let pIdx = 0;
-            for (let i = 0; i < peaks.length - 1; i++) {
-                if (x >= peaks[i].x && x < peaks[i + 1].x) {
-                    pIdx = i;
-                    break;
-                }
-            }
-            const p0 = peaks[pIdx];
-            const p1 = peaks[Math.min(pIdx + 1, peaks.length - 1)];
-            const t = p1.x > p0.x ? (x - p0.x) / (p1.x - p0.x) : 0;
-            const peakY = p0.peakY + (p1.peakY - p0.peakY) * t;
-            const colH = h - peakY;
-            g.fillRect(x, peakY, 1, colH);
+
+        for (const { name, base } of dirs) {
+            // Walk: cycle walk-A, stand, walk-B, stand
+            this.anims.create({
+                key: `player_walk_${name}`,
+                frames: this.anims.generateFrameNumbers('player_sheet', {
+                    frames: [base + 1, base, base + 2, base],
+                }),
+                frameRate: WALK_FPS,
+                repeat: -1,
+            });
+
+            // Idle: single standing frame
+            this.anims.create({
+                key: `player_idle_${name}`,
+                frames: [{ key: 'player_sheet', frame: base }],
+                frameRate: 1,
+                repeat: 0,
+            });
         }
 
-        // Near mountains (slightly lighter)
-        g.fillStyle(0x252540, 1);
-        const nearPeaks = [
-            { x: 0, peakY: 100 },
-            { x: 60, peakY: 70 },
-            { x: 120, peakY: 90 },
-            { x: 200, peakY: 60 },
-            { x: 280, peakY: 80 },
-            { x: 320, peakY: 100 },
-        ];
-        for (let x = 0; x < w; x++) {
-            let pIdx = 0;
-            for (let i = 0; i < nearPeaks.length - 1; i++) {
-                if (x >= nearPeaks[i].x && x < nearPeaks[i + 1].x) {
-                    pIdx = i;
-                    break;
-                }
-            }
-            const p0 = nearPeaks[pIdx];
-            const p1 = nearPeaks[Math.min(pIdx + 1, nearPeaks.length - 1)];
-            const t = p1.x > p0.x ? (x - p0.x) / (p1.x - p0.x) : 0;
-            const peakY = p0.peakY + (p1.peakY - p0.peakY) * t;
-            const colH = h - peakY;
-            g.fillRect(x, peakY, 1, colH);
-        }
-
-        g.generateTexture('bg_mountains', w, h);
-        g.destroy();
+        Logger.debug('PreloaderScene', '8 player animations created (4 walk + 4 idle)');
     }
 
-    /** Create building background textures */
-    private createBuildingTextures(): void {
-        // Korean traditional building silhouette
-        const g = this.add.graphics();
-        const w = 120;
-        const h = 100;
+    // ----------------------------------------------------------------
+    //  Utility
+    // ----------------------------------------------------------------
 
-        // Roof (curved Korean-style)
-        g.fillStyle(0x333344, 1);
-        g.fillRect(5, 20, 110, 10);
-        g.fillRect(0, 15, 120, 8);
-        // Curved ends
-        g.fillRect(0, 10, 20, 8);
-        g.fillRect(100, 10, 20, 8);
-        g.fillRect(2, 8, 10, 6);
-        g.fillRect(108, 8, 10, 6);
-
-        // Walls
-        g.fillStyle(0x2a2a3a, 1);
-        g.fillRect(15, 30, 90, 60);
-
-        // Door
-        g.fillStyle(0x3a3a4a, 1);
-        g.fillRect(45, 50, 30, 40);
-
-        // Windows
-        g.fillStyle(0xffaa44, 0.4);
-        g.fillRect(22, 40, 16, 16);
-        g.fillRect(82, 40, 16, 16);
-
-        // Window frames
-        g.fillStyle(0x333344, 1);
-        g.fillRect(22, 47, 16, 1);
-        g.fillRect(29, 40, 1, 16);
-        g.fillRect(82, 47, 16, 1);
-        g.fillRect(89, 40, 1, 16);
-
-        g.generateTexture('bg_building', w, h);
-        g.destroy();
-    }
-
-    /** Create hanging lantern */
-    private createLanternTexture(): void {
-        const g = this.add.graphics();
-        // String
-        g.fillStyle(0x444444, 1);
-        g.fillRect(7, 0, 2, 6);
-        // Lantern body
-        g.fillStyle(0xff6633, 0.9);
-        g.fillRect(2, 6, 12, 16);
-        // Frame
-        g.fillStyle(0x664422, 1);
-        g.fillRect(1, 5, 14, 2);
-        g.fillRect(1, 20, 14, 2);
-        g.fillRect(1, 5, 2, 17);
-        g.fillRect(13, 5, 2, 17);
-        // Glow effect
-        g.fillStyle(0xffaa44, 0.3);
-        g.fillRect(0, 4, 16, 20);
-        // Tassel
-        g.fillStyle(0xff4422, 1);
-        g.fillRect(6, 22, 4, 6);
-        g.generateTexture('lantern', 16, 28);
-        g.destroy();
-    }
-
-    /** Create a simple tree */
-    private createTreeTexture(): void {
-        const g = this.add.graphics();
-        // Trunk
-        g.fillStyle(0x554422, 1);
-        g.fillRect(20, 40, 12, 40);
-        // Canopy layers
-        g.fillStyle(0x2a5533, 1);
-        g.fillRect(6, 10, 40, 20);
-        g.fillStyle(0x336644, 1);
-        g.fillRect(10, 0, 32, 18);
-        g.fillStyle(0x2a5533, 1);
-        g.fillRect(2, 20, 48, 16);
-        g.fillStyle(0x224422, 1);
-        g.fillRect(8, 30, 36, 12);
-        g.generateTexture('tree', 52, 80);
-        g.destroy();
-    }
-
-    /** Create effect textures */
-    private createEffectTextures(): void {
-        // Hit particle
-        const g1 = this.add.graphics();
-        g1.fillStyle(0xffffff, 1);
-        g1.fillRect(1, 1, 6, 6);
-        g1.fillStyle(0xffff88, 1);
-        g1.fillRect(2, 2, 4, 4);
-        g1.generateTexture('hit_particle', 8, 8);
-        g1.destroy();
-
-        // Parry spark
-        const g2 = this.add.graphics();
-        g2.fillStyle(0xffff44, 1);
-        g2.fillRect(12, 0, 8, 32);
-        g2.fillRect(0, 12, 32, 8);
-        g2.fillStyle(0xffffff, 1);
-        g2.fillRect(14, 2, 4, 28);
-        g2.fillRect(2, 14, 28, 4);
-        g2.generateTexture('parry_effect', 32, 32);
-        g2.destroy();
-
-        // Perfect parry (bigger)
-        const g3 = this.add.graphics();
-        g3.fillStyle(0xffffff, 0.8);
-        g3.fillRect(20, 0, 8, 48);
-        g3.fillRect(0, 20, 48, 8);
-        g3.fillRect(8, 8, 32, 32);
-        g3.fillStyle(0xffff88, 0.6);
-        g3.fillRect(12, 12, 24, 24);
-        g3.generateTexture('perfect_parry_effect', 48, 48);
-        g3.destroy();
-    }
-
-    /** Create item textures */
-    private createItemTextures(): void {
-        // Potion
-        const g1 = this.add.graphics();
-        g1.fillStyle(0x333333, 1);
-        g1.fillRect(8, 2, 8, 6);
-        g1.fillStyle(0xff3333, 1);
-        g1.fillRect(4, 8, 16, 14);
-        g1.fillStyle(0xff6666, 1);
-        g1.fillRect(6, 10, 6, 6);
-        g1.generateTexture('item_potion', 24, 24);
-        g1.destroy();
-
-        // Gold coin
-        const g2 = this.add.graphics();
-        g2.fillStyle(0xddaa22, 1);
-        g2.fillRect(4, 4, 16, 16);
-        g2.fillStyle(0xffcc33, 1);
-        g2.fillRect(6, 6, 12, 12);
-        g2.fillStyle(0xddaa22, 1);
-        g2.fillRect(9, 8, 6, 8);
-        g2.generateTexture('item_gold', 24, 24);
-        g2.destroy();
-
-        // Default item
-        const g3 = this.add.graphics();
-        g3.fillStyle(0xffd700, 1);
-        g3.fillRect(4, 4, 16, 16);
-        g3.fillStyle(0xffee66, 1);
-        g3.fillRect(6, 6, 12, 12);
-        g3.generateTexture('item_default', 24, 24);
-        g3.destroy();
-
-        // UI placeholders
-        const g4 = this.add.graphics();
-        g4.fillStyle(0x222222, 0.9);
-        g4.fillRect(0, 0, 32, 32);
-        g4.generateTexture('ui_dialogue_box', 32, 32);
-        g4.destroy();
-
-        const g5 = this.add.graphics();
-        g5.fillStyle(0x333333, 0.9);
-        g5.fillRect(0, 0, 32, 32);
-        g5.generateTexture('ui_name_box', 32, 32);
-        g5.destroy();
-
-        // Tileset placeholder
-        const g6 = this.add.graphics();
-        g6.fillStyle(0x556655, 1);
-        g6.fillRect(0, 0, 32, 32);
-        g6.generateTexture('tiles_placeholder', 32, 32);
-        g6.destroy();
+    /**
+     * Darken a hex colour by a multiplicative factor.
+     * @param color - Source colour (0xRRGGBB)
+     * @param factor - 0.0 = black, 1.0 = unchanged
+     * @returns Darkened colour value
+     */
+    private darken(color: number, factor: number): number {
+        const r = Math.floor(((color >> 16) & 0xff) * factor);
+        const g = Math.floor(((color >> 8) & 0xff) * factor);
+        const b = Math.floor((color & 0xff) * factor);
+        return (r << 16) | (g << 8) | b;
     }
 }

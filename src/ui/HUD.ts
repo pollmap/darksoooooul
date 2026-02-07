@@ -1,108 +1,99 @@
 import Phaser from 'phaser';
-import { HealthBar } from './HealthBar';
-import { EnergyBar } from './EnergyBar';
-import { MiniMap } from './MiniMap';
-import { GAME_WIDTH, GAME_HEIGHT, COLOR_STRINGS } from '../utils/Constants';
+import { GAME_WIDTH, GAME_HEIGHT, COLOR_STRINGS, DEPTH, COLORS } from '../utils/Constants';
+import { GameState } from '../state/GameState';
 import { formatGold } from '../utils/Helpers';
+import { Logger } from '../utils/Logger';
 
 /**
- * Heads-up display showing health, energy, gold, area name, and quest tracker.
+ * Simplified top-down RPG HUD.
+ * Shows area name, HP, gold in a clean Pokémon-style layout.
  */
 export class HUD extends Phaser.GameObjects.Container {
-    private healthBar1: HealthBar;
-    private energyBar1: EnergyBar;
-    private healthBar2: HealthBar | null = null;
-    private energyBar2: EnergyBar | null = null;
-    private miniMap: MiniMap;
+    private gameState: GameState;
 
-    private goldText: Phaser.GameObjects.Text;
-    private areaText: Phaser.GameObjects.Text;
-    private questText: Phaser.GameObjects.Text;
-    private notificationText: Phaser.GameObjects.Text;
+    private areaText!: Phaser.GameObjects.Text;
+    private hpText!: Phaser.GameObjects.Text;
+    private goldText!: Phaser.GameObjects.Text;
+    private levelText!: Phaser.GameObjects.Text;
+    private notificationText!: Phaser.GameObjects.Text;
+
+    /** Background panel for HUD info */
+    private hudBg!: Phaser.GameObjects.Rectangle;
 
     constructor(scene: Phaser.Scene) {
         super(scene, 0, 0);
         scene.add.existing(this);
 
-        // P1 Health bar (top-left)
-        this.healthBar1 = new HealthBar(scene, 20, 20, 200, 20, '대연무');
-        this.add(this.healthBar1);
+        this.gameState = GameState.getInstance();
+        this.createHUD();
+        this.setupEventListeners();
 
-        // P1 Energy bar
-        this.energyBar1 = new EnergyBar(scene, 20, 48, 150, 12);
-        this.add(this.energyBar1);
+        this.setScrollFactor(0);
+        this.setDepth(DEPTH.UI);
+    }
 
-        // Gold display (top-right)
-        this.goldText = scene.add.text(GAME_WIDTH - 20, 20, '0 전', {
-            fontSize: '18px',
+    /** Create the HUD elements */
+    private createHUD(): void {
+        // Top bar background
+        this.hudBg = this.scene.add.rectangle(0, 0, GAME_WIDTH, 28, 0x000000, 0.6)
+            .setOrigin(0, 0).setScrollFactor(0);
+        this.add(this.hudBg);
+
+        // Area name (left)
+        this.areaText = this.scene.add.text(8, 4, '', {
+            fontSize: '12px',
+            color: COLOR_STRINGS.WHITE,
+            fontFamily: 'monospace',
+        }).setScrollFactor(0);
+        this.add(this.areaText);
+
+        // HP display (center-left)
+        const hp = this.gameState.getHealth();
+        const maxHp = this.gameState.getMaxHealth();
+        this.hpText = this.scene.add.text(180, 4, `HP:${hp}/${maxHp}`, {
+            fontSize: '12px',
+            color: COLOR_STRINGS.WHITE,
+            fontFamily: 'monospace',
+        }).setScrollFactor(0);
+        this.add(this.hpText);
+
+        // Level (center)
+        this.levelText = this.scene.add.text(340, 4, `Lv.${this.gameState.getLevel()}`, {
+            fontSize: '12px',
+            color: COLOR_STRINGS.WHITE,
+            fontFamily: 'monospace',
+        }).setScrollFactor(0);
+        this.add(this.levelText);
+
+        // Gold (right)
+        this.goldText = this.scene.add.text(GAME_WIDTH - 8, 4, `${formatGold(this.gameState.getGold())}`, {
+            fontSize: '12px',
             color: COLOR_STRINGS.GOLD,
-            stroke: '#000000',
-            strokeThickness: 2,
+            fontFamily: 'monospace',
         }).setOrigin(1, 0).setScrollFactor(0);
         this.add(this.goldText);
 
-        // Area name (top-center)
-        this.areaText = scene.add.text(GAME_WIDTH / 2, 20, '', {
+        // Notification text (center of screen)
+        this.notificationText = this.scene.add.text(GAME_WIDTH / 2, 60, '', {
             fontSize: '16px',
             color: COLOR_STRINGS.WHITE,
             stroke: '#000000',
-            strokeThickness: 2,
-        }).setOrigin(0.5, 0).setScrollFactor(0);
-        this.add(this.areaText);
-
-        // Quest tracker (bottom-left)
-        this.questText = scene.add.text(20, GAME_HEIGHT - 20, '', {
-            fontSize: '14px',
-            color: COLOR_STRINGS.WHITE,
-            stroke: '#000000',
-            strokeThickness: 1,
-            wordWrap: { width: 300 },
-        }).setOrigin(0, 1).setScrollFactor(0);
-        this.add(this.questText);
-
-        // Notification text (top-center, below area name)
-        this.notificationText = scene.add.text(GAME_WIDTH / 2, 100, '', {
-            fontSize: '20px',
-            color: COLOR_STRINGS.GOLD,
-            stroke: '#000000',
             strokeThickness: 3,
+            fontFamily: 'monospace',
         }).setOrigin(0.5).setScrollFactor(0).setAlpha(0);
         this.add(this.notificationText);
-
-        // Mini-map (top-right corner, below gold)
-        this.miniMap = new MiniMap(scene, GAME_WIDTH - 170, 45);
-        this.add(this.miniMap);
-
-        this.setScrollFactor(0);
-        this.setDepth(100);
-
-        this.setupEventListeners();
     }
 
+    /** Set up event listeners for HUD updates */
     private setupEventListeners(): void {
         const scene = this.scene;
 
-        scene.events.on('player_damaged', (data: { current: number; max: number }) => {
-            this.healthBar1.updateValue(data.current, data.max);
-        });
-
-        scene.events.on('energy_changed', (data: { current: number; max: number }) => {
-            this.energyBar1.update(data.current, data.max);
-        });
-
-        scene.events.on('player_healed', (data: { current: number; max: number }) => {
-            this.healthBar1.updateValue(data.current, data.max);
-        });
-
-        scene.events.on('player2_damaged', (data: { current: number; max: number }) => {
-            if (this.healthBar2) this.healthBar2.updateValue(data.current, data.max);
-        });
-
-        scene.events.on('player2_joined', () => this.addPlayer2HUD());
-        scene.events.on('player2_left', () => this.removePlayer2HUD());
+        scene.events.on('player_damaged', () => this.refreshHP());
+        scene.events.on('player_healed', () => this.refreshHP());
+        scene.events.on('energy_changed', () => this.refreshHP());
 
         scene.events.on('gold_changed', (amount: number) => {
-            this.goldText.setText(formatGold(amount));
+            this.goldText.setText(`${formatGold(amount)}`);
         });
 
         scene.events.on('area_changed', (areaName: string) => {
@@ -110,65 +101,64 @@ export class HUD extends Phaser.GameObjects.Container {
             this.showAreaAnnouncement(areaName);
         });
 
-        scene.events.on('quest_updated', (info: string) => {
-            this.questText.setText(info);
-        });
-
         scene.events.on('show_notification', (message: string) => {
             this.showNotification(message);
         });
+
+        scene.events.on('level_up', () => {
+            this.levelText.setText(`Lv.${this.gameState.getLevel()}`);
+            this.showNotification('레벨 업!');
+        });
     }
 
-    /** Add player 2 HUD elements */
-    private addPlayer2HUD(): void {
-        if (this.healthBar2) return;
-        this.healthBar2 = new HealthBar(this.scene, GAME_WIDTH - 220, 20, 200, 20, '소율');
-        this.add(this.healthBar2);
-        this.energyBar2 = new EnergyBar(this.scene, GAME_WIDTH - 170, 48, 150, 12);
-        this.add(this.energyBar2);
+    /** Refresh HP display */
+    private refreshHP(): void {
+        const hp = this.gameState.getHealth();
+        const maxHp = this.gameState.getMaxHealth();
+        this.hpText.setText(`HP:${hp}/${maxHp}`);
+
+        // Color based on HP ratio
+        const ratio = hp / maxHp;
+        if (ratio <= 0.25) {
+            this.hpText.setColor('#ff4444');
+        } else if (ratio <= 0.5) {
+            this.hpText.setColor('#ffaa44');
+        } else {
+            this.hpText.setColor(COLOR_STRINGS.WHITE);
+        }
     }
 
-    /** Remove player 2 HUD elements */
-    private removePlayer2HUD(): void {
-        if (this.healthBar2) { this.healthBar2.destroy(); this.healthBar2 = null; }
-        if (this.energyBar2) { this.energyBar2.destroy(); this.energyBar2 = null; }
-    }
-
-    /** Update mini-map with player position */
-    public updateMiniMap(playerX: number, playerY: number): void {
-        this.miniMap.updatePlayerPosition(playerX, playerY);
-    }
-
-    /** Show a large area name announcement */
+    /** Show area name announcement in center */
     private showAreaAnnouncement(areaName: string): void {
         const bigText = this.scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, areaName, {
-            fontSize: '48px',
+            fontSize: '24px',
             color: '#ffffff',
             stroke: '#000000',
             strokeThickness: 4,
-        }).setOrigin(0.5).setAlpha(0).setScrollFactor(0).setDepth(200);
+            fontFamily: 'monospace',
+        }).setOrigin(0.5).setAlpha(0).setScrollFactor(0).setDepth(DEPTH.UI + 5);
 
         this.scene.tweens.add({
             targets: bigText,
             alpha: 1,
-            duration: 500,
+            duration: 400,
             yoyo: true,
-            hold: 1000,
+            hold: 1200,
             onComplete: () => bigText.destroy(),
         });
     }
 
     /** Show a notification message */
     public showNotification(message: string): void {
-        this.notificationText.setText(message).setAlpha(1);
+        this.notificationText.setText(message).setAlpha(1).setY(60);
         this.scene.tweens.add({
             targets: this.notificationText,
             alpha: 0,
-            y: 80,
+            y: 40,
             duration: 2000,
             ease: 'Power2',
             onComplete: () => {
-                this.notificationText.setY(100);
+                this.notificationText.setY(60);
             },
         });
     }

@@ -1,11 +1,24 @@
 import Phaser from 'phaser';
 import { BaseScene } from './BaseScene';
-import { SCENES, GAME_WIDTH, GAME_HEIGHT, DEPTH, COOP } from '../utils/Constants';
+import { SCENES, GAME_WIDTH, GAME_HEIGHT, DEPTH } from '../utils/Constants';
 import { Logger } from '../utils/Logger';
 import { SaveSystem } from '../systems/SaveSystem';
 
+/** Data passed when starting a battle */
+interface IBattleData {
+    enemyName: string;
+    enemyNameKo: string;
+    enemyHp: number;
+    enemyAtk: number;
+    enemyDef: number;
+    enemyExp: number;
+    enemyGold: [number, number];
+    returnScene: string;
+}
+
 /**
  * Main game scene orchestrating gameplay, launching world and UI sub-scenes.
+ * Updated for top-down RPG with battle transitions.
  */
 export class GameScene extends BaseScene {
     private currentWorldScene: string = SCENES.HUB;
@@ -34,6 +47,8 @@ export class GameScene extends BaseScene {
         this.events.on('return_to_menu', this.onReturnToMenu, this);
         this.events.on('player_died', this.onPlayerDied, this);
         this.events.on('travel_to_area', this.onTravelToArea, this);
+        this.events.on('start_battle', this.onStartBattle, this);
+        this.events.on('battle_ended', this.onBattleEnded, this);
 
         // Auto-save on area transitions
         this.events.on('area_transition', () => {
@@ -43,30 +58,19 @@ export class GameScene extends BaseScene {
         this.fadeIn();
     }
 
-    update(time: number, delta: number): void {
+    update(_time: number, _delta: number): void {
         if (this.isPaused) return;
-
-        // Update play time
         this.gameState.updatePlayTime();
-
-        // Check for P2 join
-        if (this.inputSystem.isPlayer2JoinRequested() && !this.gameState.getIsCoopActive()) {
-            this.events.emit('player2_join_requested');
-        }
     }
 
     /** Handle world scene change */
-    private onChangeWorld(newWorldScene: string): void {
+    private onChangeWorld(newWorldScene: string, data?: { playerX?: number; playerY?: number }): void {
         Logger.info('GameScene', `Changing world to ${newWorldScene}`);
 
-        // Stop current world scene
         this.scene.stop(this.currentWorldScene);
-
-        // Launch new world scene
         this.currentWorldScene = newWorldScene;
-        this.scene.launch(newWorldScene);
+        this.scene.launch(newWorldScene, data);
 
-        // Auto-save
         SaveSystem.autoSave();
     }
 
@@ -86,6 +90,46 @@ export class GameScene extends BaseScene {
         if (sceneKey && sceneKey !== this.currentWorldScene) {
             this.gameState.setCurrentArea(areaId);
             this.onChangeWorld(sceneKey);
+        }
+    }
+
+    /** Start a battle - pause world, launch battle scene */
+    private onStartBattle(battleData: IBattleData): void {
+        Logger.info('GameScene', `Battle started against ${battleData.enemyNameKo}`);
+
+        // Pause the current world scene (keep it running in background)
+        this.scene.pause(this.currentWorldScene);
+        this.isPaused = true;
+
+        // Launch battle scene
+        this.scene.launch(SCENES.BATTLE, {
+            ...battleData,
+            returnScene: this.currentWorldScene,
+        });
+    }
+
+    /** Battle ended - resume world scene */
+    private onBattleEnded(result: { victory: boolean; exp?: number; gold?: number }): void {
+        Logger.info('GameScene', `Battle ended. Victory: ${result.victory}`);
+
+        // Stop battle scene
+        this.scene.stop(SCENES.BATTLE);
+
+        if (result.victory) {
+            // Award rewards
+            if (result.exp) {
+                this.gameState.addExp(result.exp);
+            }
+            if (result.gold) {
+                this.gameState.addGold(result.gold);
+            }
+
+            // Resume world
+            this.scene.resume(this.currentWorldScene);
+            this.isPaused = false;
+        } else {
+            // Player died - return to menu
+            this.onPlayerDied();
         }
     }
 
@@ -112,18 +156,18 @@ export class GameScene extends BaseScene {
     private onPlayerDied(): void {
         Logger.info('GameScene', 'Player died');
 
-        // Show death screen briefly, then respawn
         const deathText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '사망', {
             fontSize: '64px',
             color: '#ff0000',
             stroke: '#000000',
             strokeThickness: 4,
-        }).setOrigin(0.5).setDepth(DEPTH.UI + 10);
+        }).setOrigin(0.5).setDepth(DEPTH.UI + 10).setScrollFactor(0);
 
         this.time.delayedCall(2000, () => {
             deathText.destroy();
-            // Respawn at last save point
-            this.events.emit('respawn_player');
+            this.scene.stop(this.currentWorldScene);
+            this.scene.stop(SCENES.UI);
+            this.scene.start(SCENES.MAIN_MENU);
         });
     }
 
@@ -134,5 +178,7 @@ export class GameScene extends BaseScene {
         this.events.off('return_to_menu');
         this.events.off('player_died');
         this.events.off('travel_to_area');
+        this.events.off('start_battle');
+        this.events.off('battle_ended');
     }
 }

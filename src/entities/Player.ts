@@ -1,730 +1,372 @@
 import Phaser from 'phaser';
-import { IPlayerAbilities, IPlayerStats, IPlayerCombat } from '../types/player.types';
-import { COMBAT, DEPTH, PHYSICS } from '../utils/Constants';
-import { Logger } from '../utils/Logger';
 import { GameState } from '../state/GameState';
 import { InputSystem } from '../systems/InputSystem';
+import { TILE_SIZE, MOVE_DURATION, DEPTH, DIR } from '../utils/Constants';
+import { TDirection } from '../utils/Constants';
+import { Logger } from '../utils/Logger';
 
-/** Animation state names for the player character */
-type TPlayerAnimState =
-    | 'idle'
-    | 'run'
-    | 'jump'
-    | 'fall'
-    | 'attack1'
-    | 'attack2'
-    | 'attack3'
-    | 'dodge'
-    | 'hurt'
-    | 'parry'
-    | 'heal'
-    | 'dead';
-
-/** Parry result types */
-type TParryResult = 'perfect' | 'normal' | 'fail';
-
-/** Default player 1 stats from player.json structure */
-const DEFAULT_STATS: IPlayerStats = {
-    maxHealth: 100,
-    maxEnergy: 100,
-    attackPower: 10,
-    defense: 5,
-    speed: 200,
-    jumpForce: 400,
+/** Direction name lookup indexed by DIR constant values */
+const DIRECTION_NAMES: Record<TDirection, string> = {
+    [DIR.DOWN]: 'down',
+    [DIR.UP]: 'up',
+    [DIR.LEFT]: 'left',
+    [DIR.RIGHT]: 'right',
 };
 
-/** Default combat configuration from player.json structure */
-const DEFAULT_COMBAT: IPlayerCombat = {
-    attackFrames: { light1: 8, light2: 8, light3: 12 },
-    damageMultipliers: { light1: 1.0, light2: 1.0, light3: 1.2, aerial: 0.8, downward: 1.5 },
-    dodge: { iFrames: 12, distance: 150, cooldown: 300 },
-    parry: { windowPerfect: 3, windowNormal: 9, stunDuration: 1000 },
-    heal: { energyCost: 30, castTime: 3000, healAmount: 30 },
+/** Grid offset deltas (dx, dy) for each direction */
+const DIRECTION_DELTAS: Record<TDirection, { dx: number; dy: number }> = {
+    [DIR.DOWN]: { dx: 0, dy: 1 },
+    [DIR.UP]: { dx: 0, dy: -1 },
+    [DIR.LEFT]: { dx: -1, dy: 0 },
+    [DIR.RIGHT]: { dx: 1, dy: 0 },
 };
-
-/** Energy regeneration constants */
-const ENERGY_REGEN_PER_SEC = 5;
-const ENERGY_PER_HIT = 3;
-const ENERGY_ON_PARRY = 10;
 
 /**
- * Main player character (P1 - Daeyeonmu/\ub300\uc5f0\ubb34).
- *
- * Manages movement, combo attacks, dodge with i-frames, parry, healing,
- * energy regeneration, damage handling, and ability unlocking.
+ * Walkability checker function type.
+ * Returns true if the tile at the given grid coordinates can be entered.
  */
-export class Player extends Phaser.Physics.Arcade.Sprite {
-    // --- Core references ---
-    protected inputSystem: InputSystem;
-    protected gameState: GameState;
-    protected playerNumber: number = 1;
+type TWalkabilityChecker = (gx: number, gy: number) => boolean;
 
-    // --- Stats ---
-    protected stats: IPlayerStats;
-    protected combat: IPlayerCombat;
-    protected health: number;
-    protected energy: number;
+/**
+ * Top-down grid-based player character (Pokemon-style).
+ *
+ * Moves tile-by-tile on a 16x16 grid with smooth tween-based sliding
+ * transitions. No physics are used — all collision is handled through
+ * an external walkability checker provided by the parent scene.
+ *
+ * Movement flow:
+ *  1. If idle and a direction key is held, update facing direction.
+ *  2. Query the walkability checker for the target tile.
+ *  3. If walkable, tween the sprite to the new position over MOVE_DURATION ms.
+ *  4. On tween completion, emit 'player_stepped' on the scene.
+ *  5. If blocked, face the direction without moving.
+ *
+ * Interaction:
+ *  - When the interact or attack action is just pressed, emit
+ *    'player_interact' with the faced tile coordinates.
+ *
+ * Animations:
+ *  - Walk: 'player_walk_down', 'player_walk_up', etc.
+ *  - Idle: 'player_idle_down', 'player_idle_up', etc.
+ *
+ * Spritesheet layout (player_sheet, 3 columns x 4 rows, 16x16 each):
+ *  - Row 0 (frames 0-2): facing down
+ *  - Row 1 (frames 3-5): facing up
+ *  - Row 2 (frames 6-8): facing left
+ *  - Row 3 (frames 9-11): facing right
+ */
+export class Player extends Phaser.GameObjects.Sprite {
+    /** Current tile column */
+    private gridX: number;
 
-    // --- Abilities ---
-    protected abilities: IPlayerAbilities = {
-        doubleJump: false,
-        wallClimb: false,
-        dashEnhanced: false,
-        waterFlow: false,
-        poisonImmune: false,
-        glide: false,
-    };
+    /** Current tile row */
+    private gridY: number;
 
-    // --- Animation / State ---
-    protected currentAnimState: TPlayerAnimState = 'idle';
-    protected facingRight: boolean = true;
+    /** Current facing direction (DIR.DOWN=0, DIR.UP=1, DIR.LEFT=2, DIR.RIGHT=3) */
+    private direction: TDirection;
 
-    // --- Movement ---
-    protected jumpCount: number = 0;
-    protected maxJumps: number = 1;
-    protected isGrounded: boolean = false;
+    /** Whether the player is currently sliding between tiles */
+    private isMoving: boolean;
 
-    // --- Combo attack system ---
-    protected comboStep: number = 0; // 0 = no combo, 1-3 = attack step
-    protected comboTimer: number = 0;
-    protected comboWindowMs: number = 500; // window to chain next attack
-    protected isAttacking: boolean = false;
-    protected attackTimer: number = 0;
+    /** Scene input system for reading key and gamepad state */
+    private inputSystem: InputSystem;
 
-    // --- Dodge ---
-    protected isDodging: boolean = false;
-    protected dodgeCooldownTimer: number = 0;
-    protected dodgeIFrameTimer: number = 0;
+    /** Global game state singleton */
+    private gameState: GameState;
 
-    // --- Parry ---
-    protected isParrying: boolean = false;
-    protected parryTimer: number = 0;
-    protected parryActiveFrames: number = 0;
+    /** Player number for InputSystem bindings (player 1) */
+    private playerNumber: number = 1;
 
-    // --- Heal ---
-    protected isHealing: boolean = false;
-    protected healTimer: number = 0;
+    /** External walkability checker set by the parent scene */
+    private walkabilityChecker: TWalkabilityChecker | null = null;
 
-    // --- Damage / invincibility ---
-    protected isInvincible: boolean = false;
-    protected invincibilityTimer: number = 0;
-    protected isDead: boolean = false;
+    /**
+     * Create a new grid-based Player sprite.
+     * @param scene - The parent Phaser scene (must have an inputSystem property)
+     * @param gridX - Starting tile column
+     * @param gridY - Starting tile row
+     */
+    constructor(scene: Phaser.Scene, gridX: number, gridY: number) {
+        const pixelX = gridX * TILE_SIZE + TILE_SIZE / 2;
+        const pixelY = gridY * TILE_SIZE + TILE_SIZE / 2;
 
-    // --- Energy regen ---
-    protected energyRegenAccumulator: number = 0;
+        super(scene, pixelX, pixelY, 'player_sheet', 0);
 
-    constructor(scene: Phaser.Scene, x: number, y: number) {
-        super(scene, x, y, 'player1');
+        this.gridX = gridX;
+        this.gridY = gridY;
+        this.direction = DIR.DOWN as TDirection;
+        this.isMoving = false;
 
-        // Add to scene and enable physics
-        scene.add.existing(this as unknown as Phaser.GameObjects.GameObject);
-        scene.physics.add.existing(this as unknown as Phaser.GameObjects.GameObject);
-
-        // Retrieve InputSystem from scene (expected to be set by the scene)
+        // Retrieve InputSystem from the scene (expected to be attached by BaseScene)
         this.inputSystem = (scene as unknown as { inputSystem: InputSystem }).inputSystem;
         this.gameState = GameState.getInstance();
 
-        // Initialize stats
-        this.stats = { ...DEFAULT_STATS };
-        this.combat = JSON.parse(JSON.stringify(DEFAULT_COMBAT));
-        this.health = this.stats.maxHealth;
-        this.energy = this.stats.maxEnergy;
-
-        // Load abilities from GameState
-        this.abilities = this.gameState.getAbilities();
-        this.maxJumps = this.abilities.doubleJump ? 2 : 1;
-
-        // Configure physics body
-        this.setupPhysicsBody();
-
-        // Set rendering depth
+        // Add to the scene display list and set render depth
+        scene.add.existing(this);
         this.setDepth(DEPTH.PLAYER);
 
-        Logger.info('Player', `Player 1 (\ub300\uc5f0\ubb34) initialized at (${x}, ${y})`);
+        // Start with the idle-down animation
+        this.playIdleAnimation();
+
+        Logger.info('Player', `Player initialized at grid (${gridX}, ${gridY})`);
     }
 
-    /** Configure the physics body dimensions and constraints */
-    protected setupPhysicsBody(): void {
-        const body = this.body as Phaser.Physics.Arcade.Body;
-        if (!body) return;
+    // =========================================================================
+    // PUBLIC API
+    // =========================================================================
 
-        body.setSize(24, 40);
-        body.setOffset(4, 8);
-        body.setMaxVelocity(PHYSICS.MAX_VELOCITY_X, PHYSICS.MAX_VELOCITY_Y);
-        body.setGravityY(0); // Scene gravity handles this
-        body.setCollideWorldBounds(true);
+    /**
+     * Set the walkability checker function.
+     * Called by the parent scene to provide tile collision logic without
+     * the Player needing to own a TileMapManager reference.
+     * @param fn - Returns true if the tile at (gx, gy) is walkable
+     */
+    public setWalkabilityChecker(fn: TWalkabilityChecker): void {
+        this.walkabilityChecker = fn;
     }
 
-    // =====================================================================
-    // UPDATE
-    // =====================================================================
+    /**
+     * Per-frame update. Call from the parent scene's update method.
+     * Processes interaction input every frame, but only processes
+     * movement input when the player is not currently sliding.
+     */
+    public update(): void {
+        this.handleInteractionInput();
 
-    public update(time: number, delta: number): void {
-        if (this.isDead) return;
-
-        const dt = delta / 1000; // seconds
-        const dtMs = delta; // milliseconds
-
-        // Update grounded state
-        const body = this.body as Phaser.Physics.Arcade.Body;
-        this.isGrounded = body.blocked.down || body.touching.down;
-
-        if (this.isGrounded) {
-            this.jumpCount = 0;
-        }
-
-        // Update timers
-        this.updateTimers(dtMs);
-
-        // Energy regeneration
-        this.regenerateEnergy(dt);
-
-        // Process input (only when not in a locked state)
-        if (!this.isAttacking && !this.isDodging && !this.isHealing && !this.isParrying) {
-            this.handleMovement();
-            this.handleJump();
-        }
-
-        this.handleAttackInput();
-        this.handleDodgeInput();
-        this.handleParryInput();
-        this.handleHealInput();
-
-        // Update animation state
-        this.updateAnimationState();
-    }
-
-    // =====================================================================
-    // TIMERS
-    // =====================================================================
-
-    /** Decrement all active cooldown and state timers */
-    protected updateTimers(dtMs: number): void {
-        // Combo window
-        if (this.comboTimer > 0) {
-            this.comboTimer -= dtMs;
-            if (this.comboTimer <= 0) {
-                this.comboStep = 0;
-                this.comboTimer = 0;
-            }
-        }
-
-        // Attack duration
-        if (this.attackTimer > 0) {
-            this.attackTimer -= dtMs;
-            if (this.attackTimer <= 0) {
-                this.isAttacking = false;
-                this.attackTimer = 0;
-                // Start combo window
-                if (this.comboStep < 3) {
-                    this.comboTimer = this.comboWindowMs;
-                } else {
-                    this.comboStep = 0;
-                }
-            }
-        }
-
-        // Dodge cooldown
-        if (this.dodgeCooldownTimer > 0) {
-            this.dodgeCooldownTimer -= dtMs;
-        }
-
-        // Dodge i-frame timer
-        if (this.dodgeIFrameTimer > 0) {
-            this.dodgeIFrameTimer -= dtMs;
-            if (this.dodgeIFrameTimer <= 0) {
-                this.isDodging = false;
-                this.isInvincible = this.invincibilityTimer > 0;
-            }
-        }
-
-        // Parry timer
-        if (this.parryTimer > 0) {
-            this.parryTimer -= dtMs;
-            if (this.parryTimer <= 0) {
-                this.isParrying = false;
-                this.parryTimer = 0;
-                this.parryActiveFrames = 0;
-            }
-        }
-
-        // Heal timer
-        if (this.healTimer > 0) {
-            this.healTimer -= dtMs;
-            if (this.healTimer <= 0) {
-                this.completeHeal();
-            }
-        }
-
-        // Invincibility timer
-        if (this.invincibilityTimer > 0) {
-            this.invincibilityTimer -= dtMs;
-            if (this.invincibilityTimer <= 0) {
-                this.isInvincible = false;
-                this.setAlpha(1);
-            } else {
-                // Flicker effect during invincibility
-                this.setAlpha(Math.sin(this.invincibilityTimer * 0.02) > 0 ? 1 : 0.4);
-            }
+        if (!this.isMoving) {
+            this.handleMovementInput();
         }
     }
 
-    // =====================================================================
-    // MOVEMENT
-    // =====================================================================
+    /** Get the current tile column */
+    public getGridX(): number {
+        return this.gridX;
+    }
 
-    /** Handle left/right movement input */
-    protected handleMovement(): void {
-        const body = this.body as Phaser.Physics.Arcade.Body;
-        const speed = this.stats.speed;
+    /** Get the current tile row */
+    public getGridY(): number {
+        return this.gridY;
+    }
 
-        if (this.inputSystem.isActionPressed('left', this.playerNumber)) {
-            body.setVelocityX(-speed);
-            this.facingRight = false;
-            this.setFlipX(true);
+    /** Get the current facing direction (DIR constant) */
+    public getDirection(): TDirection {
+        return this.direction;
+    }
+
+    /** Check whether the player is currently moving between tiles */
+    public getIsMoving(): boolean {
+        return this.isMoving;
+    }
+
+    /**
+     * Get the grid position of the tile the player is facing.
+     * Useful for interaction targets (NPCs, signs, doors, etc.).
+     * @returns Object with gx and gy of the faced tile
+     */
+    public getFacedTile(): { gx: number; gy: number } {
+        const delta = DIRECTION_DELTAS[this.direction];
+        return {
+            gx: this.gridX + delta.dx,
+            gy: this.gridY + delta.dy,
+        };
+    }
+
+    /**
+     * Teleport the player to a new grid position without animation.
+     * Cancels any active movement and snaps to the target tile.
+     * Used for scene transitions, warps, and loading saved positions.
+     * @param gx - Target tile column
+     * @param gy - Target tile row
+     * @param dir - Optional facing direction after teleport
+     */
+    public setGridPosition(gx: number, gy: number, dir?: TDirection): void {
+        this.isMoving = false;
+        this.gridX = gx;
+        this.gridY = gy;
+        this.x = gx * TILE_SIZE + TILE_SIZE / 2;
+        this.y = gy * TILE_SIZE + TILE_SIZE / 2;
+
+        if (dir !== undefined) {
+            this.direction = dir;
+        }
+
+        this.playIdleAnimation();
+        this.gameState.setPosition(this.x, this.y);
+
+        Logger.debug('Player', `Teleported to grid (${gx}, ${gy})`);
+    }
+
+    // =========================================================================
+    // INPUT HANDLING
+    // =========================================================================
+
+    /**
+     * Read directional input and attempt to move or change facing direction.
+     * Down is checked first to match classic top-down RPG priority.
+     * Always updates the facing direction even if the target tile is blocked.
+     */
+    private handleMovementInput(): void {
+        let targetDir: TDirection | null = null;
+
+        if (this.inputSystem.isActionPressed('down', this.playerNumber)) {
+            targetDir = DIR.DOWN as TDirection;
+        } else if (this.inputSystem.isActionPressed('up', this.playerNumber)) {
+            targetDir = DIR.UP as TDirection;
+        } else if (this.inputSystem.isActionPressed('left', this.playerNumber)) {
+            targetDir = DIR.LEFT as TDirection;
         } else if (this.inputSystem.isActionPressed('right', this.playerNumber)) {
-            body.setVelocityX(speed);
-            this.facingRight = true;
-            this.setFlipX(false);
-        } else {
-            body.setVelocityX(0);
-        }
-    }
-
-    /** Handle jump and double jump input */
-    protected handleJump(): void {
-        if (!this.inputSystem.isActionJustPressed('jump', this.playerNumber)) return;
-
-        this.maxJumps = this.abilities.doubleJump ? 2 : 1;
-
-        if (this.jumpCount < this.maxJumps) {
-            const body = this.body as Phaser.Physics.Arcade.Body;
-            body.setVelocityY(-this.stats.jumpForce);
-            this.jumpCount++;
-            Logger.debug('Player', `Jump ${this.jumpCount}/${this.maxJumps}`);
-        }
-    }
-
-    // =====================================================================
-    // COMBAT - COMBO ATTACKS
-    // =====================================================================
-
-    /** Handle attack input and combo chaining */
-    protected handleAttackInput(): void {
-        if (!this.inputSystem.isActionJustPressed('attack', this.playerNumber)) return;
-        if (this.isDodging || this.isHealing || this.isParrying) return;
-
-        // Determine next combo step
-        let nextStep: number;
-        if (!this.isAttacking && this.comboStep === 0) {
-            nextStep = 1;
-        } else if (!this.isAttacking && this.comboTimer > 0 && this.comboStep < 3) {
-            nextStep = this.comboStep + 1;
-        } else {
-            return; // Cannot attack right now
+            targetDir = DIR.RIGHT as TDirection;
         }
 
-        this.comboStep = nextStep;
-        this.isAttacking = true;
-        this.comboTimer = 0;
+        if (targetDir === null) {
+            return;
+        }
 
-        // Calculate attack duration from frame data
-        const frameKey = `light${nextStep}` as keyof typeof this.combat.attackFrames;
-        const frames = this.combat.attackFrames[frameKey];
-        const frameDurationMs = (frames / 60) * 1000; // Convert frames at 60fps to ms
-        this.attackTimer = frameDurationMs;
+        // Always update facing direction, even when blocked
+        const directionChanged = this.direction !== targetDir;
+        this.direction = targetDir;
 
-        // Calculate damage
-        const multiplierKey = `light${nextStep}` as keyof typeof this.combat.damageMultipliers;
-        const multiplier = this.combat.damageMultipliers[multiplierKey];
-        const damage = Math.floor(this.stats.attackPower * multiplier);
+        if (directionChanged) {
+            this.playIdleAnimation();
+        }
 
-        // Stop horizontal movement during attack
-        const body = this.body as Phaser.Physics.Arcade.Body;
-        body.setVelocityX(0);
+        // Calculate target tile from direction
+        const delta = DIRECTION_DELTAS[targetDir];
+        const targetGX = this.gridX + delta.dx;
+        const targetGY = this.gridY + delta.dy;
 
-        // Emit attack event for combat system to handle hit detection
-        this.scene.events.emit('player_attack', {
-            player: this,
-            playerNumber: this.playerNumber,
-            comboStep: nextStep,
-            damage,
-            facingRight: this.facingRight,
-        });
-
-        // Gain energy on attack
-        this.addEnergy(ENERGY_PER_HIT);
-
-        Logger.debug('Player', `Attack combo step ${nextStep}, damage: ${damage}`);
-    }
-
-    // =====================================================================
-    // COMBAT - DODGE
-    // =====================================================================
-
-    /** Handle dodge input with i-frames */
-    protected handleDodgeInput(): void {
-        if (!this.inputSystem.isActionJustPressed('dodge', this.playerNumber)) return;
-        if (this.isDodging || this.dodgeCooldownTimer > 0 || this.isAttacking || this.isHealing) return;
-
-        this.isDodging = true;
-        this.isInvincible = true;
-
-        // Calculate i-frame duration: frames at 60fps
-        const iFrameDurationMs = (this.combat.dodge.iFrames / 60) * 1000;
-        this.dodgeIFrameTimer = iFrameDurationMs;
-        this.dodgeCooldownTimer = this.combat.dodge.cooldown;
-
-        // Apply dodge velocity
-        const direction = this.facingRight ? 1 : -1;
-        const dodgeSpeed = this.combat.dodge.distance / (iFrameDurationMs / 1000);
-        const body = this.body as Phaser.Physics.Arcade.Body;
-        body.setVelocityX(dodgeSpeed * direction);
-
-        // Cancel any ongoing attack
-        this.isAttacking = false;
-        this.attackTimer = 0;
-        this.comboStep = 0;
-        this.comboTimer = 0;
-
-        Logger.debug('Player', 'Dodge initiated');
-    }
-
-    // =====================================================================
-    // COMBAT - PARRY
-    // =====================================================================
-
-    /** Handle parry input */
-    protected handleParryInput(): void {
-        if (!this.inputSystem.isActionJustPressed('parry', this.playerNumber)) return;
-        if (this.isDodging || this.isAttacking || this.isHealing || this.isParrying) return;
-
-        this.isParrying = true;
-        this.parryActiveFrames = 0;
-
-        // Total parry window in ms (normal window encompasses perfect)
-        const totalParryMs = (this.combat.parry.windowNormal / 60) * 1000;
-        this.parryTimer = totalParryMs;
-
-        // Stop movement during parry
-        const body = this.body as Phaser.Physics.Arcade.Body;
-        body.setVelocityX(0);
-
-        Logger.debug('Player', 'Parry initiated');
+        if (this.isTileWalkable(targetGX, targetGY)) {
+            this.startMove(targetGX, targetGY);
+        }
     }
 
     /**
-     * Check parry result against an incoming attack.
-     * Should be called by the combat system when an enemy attack contacts
-     * the player while parrying.
-     * @returns 'perfect' if within perfect window, 'normal' if within normal window, 'fail' otherwise
+     * Check for interact/attack input and emit an interaction event
+     * targeting the tile the player is facing.
      */
-    public checkParry(): TParryResult {
-        if (!this.isParrying) return 'fail';
+    private handleInteractionInput(): void {
+        const interactPressed =
+            this.inputSystem.isActionJustPressed('interact', this.playerNumber) ||
+            this.inputSystem.isActionJustPressed('attack', this.playerNumber);
 
-        const totalParryMs = (this.combat.parry.windowNormal / 60) * 1000;
-        const perfectWindowMs = (this.combat.parry.windowPerfect / 60) * 1000;
-        const elapsed = totalParryMs - this.parryTimer;
-
-        if (elapsed <= perfectWindowMs) {
-            this.addEnergy(ENERGY_ON_PARRY);
-            this.isParrying = false;
-            this.parryTimer = 0;
-            Logger.info('Player', 'Perfect parry!');
-            return 'perfect';
+        if (!interactPressed) {
+            return;
         }
 
-        if (this.parryTimer > 0) {
-            this.addEnergy(ENERGY_ON_PARRY);
-            this.isParrying = false;
-            this.parryTimer = 0;
-            Logger.info('Player', 'Normal parry');
-            return 'normal';
-        }
+        const faced = this.getFacedTile();
+        this.scene.events.emit('player_interact', faced.gx, faced.gy, this.direction);
 
-        return 'fail';
+        Logger.debug('Player', `Interact at grid (${faced.gx}, ${faced.gy})`);
     }
 
-    // =====================================================================
-    // COMBAT - HEAL
-    // =====================================================================
-
-    /** Handle heal input */
-    protected handleHealInput(): void {
-        if (!this.inputSystem.isActionJustPressed('heal', this.playerNumber)) return;
-        if (this.isHealing || this.isDodging || this.isAttacking || this.isParrying) return;
-        if (this.energy < this.combat.heal.energyCost) return;
-        if (this.health >= this.stats.maxHealth) return;
-
-        this.isHealing = true;
-        this.healTimer = this.combat.heal.castTime;
-
-        // Deduct energy cost upfront
-        this.addEnergy(-this.combat.heal.energyCost);
-
-        // Stop movement
-        const body = this.body as Phaser.Physics.Arcade.Body;
-        body.setVelocityX(0);
-
-        Logger.debug('Player', 'Heal started');
-    }
-
-    /** Called when heal cast time completes */
-    protected completeHeal(): void {
-        if (!this.isHealing) return;
-
-        this.isHealing = false;
-        this.healTimer = 0;
-
-        const healAmount = this.combat.heal.healAmount;
-        this.health = Math.min(this.health + healAmount, this.stats.maxHealth);
-
-        this.scene.events.emit('player_healed', {
-            player: this,
-            playerNumber: this.playerNumber,
-            amount: healAmount,
-            currentHealth: this.health,
-        });
-
-        // Sync to GameState
-        this.gameState.setHealth(this.health);
-
-        Logger.info('Player', `Healed ${healAmount} HP. Health: ${this.health}/${this.stats.maxHealth}`);
-    }
-
-    /** Cancel healing (e.g., when hit during cast) */
-    public cancelHeal(): void {
-        if (this.isHealing) {
-            this.isHealing = false;
-            this.healTimer = 0;
-            Logger.debug('Player', 'Heal interrupted');
-        }
-    }
-
-    // =====================================================================
-    // ENERGY
-    // =====================================================================
-
-    /** Add or subtract energy, clamped to [0, maxEnergy] */
-    protected addEnergy(amount: number): void {
-        const prev = this.energy;
-        this.energy = Phaser.Math.Clamp(this.energy + amount, 0, this.stats.maxEnergy);
-        if (this.energy !== prev) {
-            this.scene.events.emit('energy_changed', {
-                player: this,
-                playerNumber: this.playerNumber,
-                energy: this.energy,
-                maxEnergy: this.stats.maxEnergy,
-            });
-            this.gameState.setEnergy(this.energy);
-        }
-    }
-
-    /** Passive energy regeneration per second */
-    protected regenerateEnergy(dt: number): void {
-        if (this.isHealing || this.isDead) return;
-        this.energyRegenAccumulator += ENERGY_REGEN_PER_SEC * dt;
-        if (this.energyRegenAccumulator >= 1) {
-            const amount = Math.floor(this.energyRegenAccumulator);
-            this.energyRegenAccumulator -= amount;
-            this.addEnergy(amount);
-        }
-    }
-
-    // =====================================================================
-    // DAMAGE
-    // =====================================================================
+    // =========================================================================
+    // MOVEMENT
+    // =========================================================================
 
     /**
-     * Apply damage to the player.
-     * Respects invincibility frames and dodge i-frames.
-     * @param amount Raw damage before defense calculation
-     * @param knockbackX Optional horizontal knockback force
-     * @param knockbackY Optional vertical knockback force
+     * Check whether a tile is walkable using the external checker.
+     * If no checker has been set, all tiles default to walkable with a warning.
+     * @param gx - Grid X to check
+     * @param gy - Grid Y to check
+     * @returns True if the tile can be entered
      */
-    public takeDamage(amount: number, knockbackX: number = 0, knockbackY: number = 0): void {
-        if (this.isDead || this.isInvincible) return;
-
-        // Check if parrying
-        if (this.isParrying) {
-            const result = this.checkParry();
-            if (result !== 'fail') return; // Parry absorbed the hit
+    private isTileWalkable(gx: number, gy: number): boolean {
+        if (!this.walkabilityChecker) {
+            Logger.warn('Player', 'No walkability checker set — defaulting to walkable');
+            return true;
         }
+        return this.walkabilityChecker(gx, gy);
+    }
 
-        // Apply defense reduction
-        const effectiveDamage = Math.max(1, amount - this.stats.defense);
-        this.health = Math.max(0, this.health - effectiveDamage);
+    /**
+     * Begin a tween-based slide from the current tile to the target tile.
+     * Updates gridX/gridY immediately so other systems can query the
+     * player's logical position during the slide. Emits 'player_stepped'
+     * on the scene when the tween completes.
+     * @param targetGX - Destination tile column
+     * @param targetGY - Destination tile row
+     */
+    private startMove(targetGX: number, targetGY: number): void {
+        this.isMoving = true;
+        this.gridX = targetGX;
+        this.gridY = targetGY;
 
-        // Cancel healing if in progress
-        this.cancelHeal();
+        const targetPixelX = targetGX * TILE_SIZE + TILE_SIZE / 2;
+        const targetPixelY = targetGY * TILE_SIZE + TILE_SIZE / 2;
 
-        // Start invincibility frames
-        this.isInvincible = true;
-        this.invincibilityTimer = COMBAT.INVINCIBILITY_AFTER_HIT;
+        this.playWalkAnimation();
 
-        // Apply knockback
-        const body = this.body as Phaser.Physics.Arcade.Body;
-        if (knockbackX !== 0 || knockbackY !== 0) {
-            body.setVelocity(knockbackX, knockbackY);
-        }
-
-        // Red tint flash
-        this.setTint(0xff0000);
-        this.scene.time.delayedCall(150, () => {
-            this.clearTint();
+        this.scene.tweens.add({
+            targets: this,
+            x: targetPixelX,
+            y: targetPixelY,
+            duration: MOVE_DURATION,
+            ease: 'Linear',
+            onComplete: () => {
+                this.onMoveComplete();
+            },
         });
+    }
 
-        // Emit damage event
-        this.scene.events.emit('player_damaged', {
-            player: this,
-            playerNumber: this.playerNumber,
-            damage: effectiveDamage,
-            currentHealth: this.health,
-            maxHealth: this.stats.maxHealth,
-        });
+    /**
+     * Called when the movement tween finishes.
+     * Resets the moving flag, syncs position to GameState, emits the
+     * 'player_stepped' event, and returns to idle animation if no
+     * direction key is being held.
+     */
+    private onMoveComplete(): void {
+        this.isMoving = false;
 
-        // Sync to GameState
-        this.gameState.setHealth(this.health);
+        // Sync position to GameState
+        this.gameState.setPosition(this.x, this.y);
 
-        Logger.info('Player', `Took ${effectiveDamage} damage. Health: ${this.health}/${this.stats.maxHealth}`);
+        // Notify the parent scene that the player completed a step
+        this.scene.events.emit('player_stepped', this.gridX, this.gridY);
 
-        // Check death
-        if (this.health <= 0) {
-            this.die();
+        // Return to idle if no direction key is held
+        if (!this.isDirectionKeyHeld()) {
+            this.playIdleAnimation();
         }
     }
 
-    /** Handle player death */
-    protected die(): void {
-        this.isDead = true;
-        this.isAttacking = false;
-        this.isDodging = false;
-        this.isHealing = false;
-        this.isParrying = false;
-
-        const body = this.body as Phaser.Physics.Arcade.Body;
-        body.setVelocity(0, 0);
-        body.setEnable(false);
-
-        this.currentAnimState = 'dead';
-        this.playAnimIfExists('player1_dead');
-
-        this.scene.events.emit('player_died', {
-            player: this,
-            playerNumber: this.playerNumber,
-        });
-
-        Logger.info('Player', 'Player 1 died');
+    /**
+     * Check whether any directional key is currently held.
+     * @returns True if at least one direction is pressed
+     */
+    private isDirectionKeyHeld(): boolean {
+        return (
+            this.inputSystem.isActionPressed('up', this.playerNumber) ||
+            this.inputSystem.isActionPressed('down', this.playerNumber) ||
+            this.inputSystem.isActionPressed('left', this.playerNumber) ||
+            this.inputSystem.isActionPressed('right', this.playerNumber)
+        );
     }
 
-    // =====================================================================
-    // ABILITIES
-    // =====================================================================
-
-    /** Unlock a new ability */
-    public unlockAbility(ability: keyof IPlayerAbilities): void {
-        this.abilities[ability] = true;
-        this.gameState.unlockAbility(ability);
-
-        if (ability === 'doubleJump') {
-            this.maxJumps = 2;
-        }
-
-        Logger.info('Player', `Ability unlocked: ${ability}`);
-    }
-
-    /** Check whether an ability is unlocked */
-    public hasAbility(ability: keyof IPlayerAbilities): boolean {
-        return this.abilities[ability];
-    }
-
-    // =====================================================================
+    // =========================================================================
     // ANIMATION
-    // =====================================================================
+    // =========================================================================
 
-    /** Determine and play the appropriate animation based on current state */
-    protected updateAnimationState(): void {
-        let newState: TPlayerAnimState;
-
-        if (this.isDead) {
-            newState = 'dead';
-        } else if (this.isHealing) {
-            newState = 'heal';
-        } else if (this.isDodging) {
-            newState = 'dodge';
-        } else if (this.isParrying) {
-            newState = 'parry';
-        } else if (this.isAttacking) {
-            newState = `attack${this.comboStep}` as TPlayerAnimState;
-        } else {
-            const body = this.body as Phaser.Physics.Arcade.Body;
-            if (!this.isGrounded) {
-                newState = body.velocity.y < 0 ? 'jump' : 'fall';
-            } else if (Math.abs(body.velocity.x) > 10) {
-                newState = 'run';
-            } else {
-                newState = 'idle';
-            }
-        }
-
-        if (newState !== this.currentAnimState) {
-            this.currentAnimState = newState;
-            this.playAnimIfExists(`player1_${newState}`);
-        }
+    /** Play the walk animation for the current facing direction */
+    private playWalkAnimation(): void {
+        const dirName = DIRECTION_NAMES[this.direction];
+        this.playAnimSafe(`player_walk_${dirName}`);
     }
 
-    /** Safely play an animation key, only if it exists in the animation manager */
-    protected playAnimIfExists(key: string): void {
+    /** Play the idle animation for the current facing direction */
+    private playIdleAnimation(): void {
+        const dirName = DIRECTION_NAMES[this.direction];
+        this.playAnimSafe(`player_idle_${dirName}`);
+    }
+
+    /**
+     * Safely play an animation only if it exists in the animation manager.
+     * Prevents errors during early initialization or when animations
+     * have not yet been registered.
+     * @param key - The animation key to play
+     */
+    private playAnimSafe(key: string): void {
         if (this.scene.anims.exists(key)) {
             this.play(key, true);
         }
-    }
-
-    // =====================================================================
-    // ACCESSORS
-    // =====================================================================
-
-    public getHealth(): number { return this.health; }
-    public getMaxHealth(): number { return this.stats.maxHealth; }
-    public getEnergy(): number { return this.energy; }
-    public getMaxEnergy(): number { return this.stats.maxEnergy; }
-    public getAttackPower(): number { return this.stats.attackPower; }
-    public getDefense(): number { return this.stats.defense; }
-    public getSpeed(): number { return this.stats.speed; }
-    public getStats(): Readonly<IPlayerStats> { return this.stats; }
-    public getIsDead(): boolean { return this.isDead; }
-    public getIsInvincible(): boolean { return this.isInvincible; }
-    public getIsAttacking(): boolean { return this.isAttacking; }
-    public getIsDodging(): boolean { return this.isDodging; }
-    public getIsParrying(): boolean { return this.isParrying; }
-    public getIsHealing(): boolean { return this.isHealing; }
-    public getComboStep(): number { return this.comboStep; }
-    public getFacingRight(): boolean { return this.facingRight; }
-    public getPlayerNumber(): number { return this.playerNumber; }
-
-    /** Set stats (e.g., after level-up or equipment change) */
-    public setStats(stats: Partial<IPlayerStats>): void {
-        Object.assign(this.stats, stats);
-        this.health = Math.min(this.health, this.stats.maxHealth);
-        this.energy = Math.min(this.energy, this.stats.maxEnergy);
-    }
-
-    /** Revive from death with a percentage of max health */
-    public revive(healthPercent: number = 0.3): void {
-        this.isDead = false;
-        this.health = Math.floor(this.stats.maxHealth * healthPercent);
-        this.energy = Math.floor(this.stats.maxEnergy * 0.5);
-        this.isInvincible = true;
-        this.invincibilityTimer = COMBAT.INVINCIBILITY_AFTER_HIT * 2;
-
-        const body = this.body as Phaser.Physics.Arcade.Body;
-        body.setEnable(true);
-
-        this.setAlpha(1);
-        this.clearTint();
-        this.gameState.setHealth(this.health);
-        this.gameState.setEnergy(this.energy);
-
-        Logger.info('Player', `Player 1 revived with ${this.health} HP`);
     }
 }

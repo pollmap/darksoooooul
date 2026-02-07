@@ -1,412 +1,320 @@
-import Phaser from 'phaser';
 import { BaseScene } from '../BaseScene';
-import { SCENES, DEPTH, GAME_WIDTH, GAME_HEIGHT } from '../../utils/Constants';
-import { Logger } from '../../utils/Logger';
+import { SCENES, TILE_SIZE, CAMERA_ZOOM, TILE, DEPTH, COMBAT } from '../../utils/Constants';
+import { TileMapManager, IMapData } from '../../systems/TileMapManager';
 import { Player } from '../../entities/Player';
-import { VFXSystem } from '../../systems/VFXSystem';
-import { WeatherSystem } from '../../systems/WeatherSystem';
+import { Logger } from '../../utils/Logger';
 
-/** Whether tutorial has been shown this session */
-let tutorialShown = false;
+/** Default spawn grid coordinates */
+const DEFAULT_X = 20;
+const DEFAULT_Y = 25;
+
+/** Map dimensions in tiles */
+const MAP_WIDTH = 40;
+const MAP_HEIGHT = 30;
 
 /**
  * Hub world scene - 저잣거리 (Marketplace)
- * Central hub connecting all regions. Contains shops, NPCs, and quest board.
+ * Central hub connecting all four regions. Contains shops, quest board,
+ * and NPCs. This is a safe zone with no random encounters in the main
+ * area, but optional tall grass at edges for light grinding.
+ *
+ * Layout (40 x 30 tiles):
+ *  - Fence perimeter with four compass exits
+ *  - N-S main road (cols 19-20) and E-W main road (rows 14-15)
+ *  - Four buildings: quest board, merchant, blacksmith, elder
+ *  - Trees, flowers, signpost, and tall-grass patches at edges
  */
 export class HubScene extends BaseScene {
-    private platforms!: Phaser.Physics.Arcade.StaticGroup;
+    private tileMap!: TileMapManager;
     private player!: Player;
-    private worldWidth: number = 3200;
-    private worldHeight: number = 1200;
-    private tutorialContainer: Phaser.GameObjects.Container | null = null;
-    private vfx!: VFXSystem;
-    private weather!: WeatherSystem;
 
     constructor() {
         super(SCENES.HUB);
     }
 
-    create(): void {
-        Logger.info('HubScene', 'Creating hub world');
+    /**
+     * Build the hub scene: generate map, spawn player, configure camera,
+     * wire up event listeners.
+     * @param data Optional spawn position from scene transition
+     */
+    create(data?: { playerX?: number; playerY?: number }): void {
+        Logger.info('HubScene', 'Creating marketplace hub (저잣거리)');
 
-        // Initialize VFX and Weather systems
-        this.vfx = new VFXSystem(this);
-        this.weather = new WeatherSystem(this);
-        this.weather.setWeather('fireflies', 0.4);
-        this.vfx.setVignette(0.3);
+        const mapData: IMapData = this.getMapData();
+        this.tileMap = new TileMapManager(this, mapData);
+        this.tileMap.renderMap();
 
-        // Create background layers (parallax)
-        this.createBackground();
+        const startX = data?.playerX ?? DEFAULT_X;
+        const startY = data?.playerY ?? DEFAULT_Y;
+        this.player = new Player(this, startX, startY);
+        this.player.setWalkabilityChecker((gx: number, gy: number) => this.tileMap.isTileWalkable(gx, gy));
 
-        // Create the world
-        this.createPlatforms();
-        this.createDecorations();
-        this.createNPCZones();
-        this.createExitZones();
-
-        // Set world bounds
-        this.physics.world.setBounds(0, 0, this.worldWidth, this.worldHeight);
-        this.cameras.main.setBounds(0, 0, this.worldWidth, this.worldHeight);
-
-        // Create player
-        this.player = new Player(this, 640, 900);
-        this.physics.add.collider(this.player, this.platforms);
+        this.cameras.main.setZoom(CAMERA_ZOOM);
         this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+        this.cameras.main.setBounds(0, 0, this.tileMap.getWorldWidth(), this.tileMap.getWorldHeight());
 
-        // Emit area info
+        this.events.on('player_stepped', this.onPlayerStepped, this);
+        this.events.on('player_interact', this.onPlayerInteract, this);
+
         const gameScene = this.scene.get(SCENES.GAME);
         gameScene.events.emit('area_changed', '저잣거리');
 
         this.fadeIn();
-
-        // Show tutorial on first visit
-        if (!tutorialShown) {
-            this.time.delayedCall(800, () => this.showTutorial());
-            tutorialShown = true;
-        }
     }
 
-    update(time: number, delta: number): void {
-        if (this.player) {
-            this.player.update(time, delta);
-        }
-        this.weather.update(time, delta);
+    /** Per-frame update: delegates to the player */
+    update(_time: number, _delta: number): void {
+        this.player.update();
     }
 
-    /** Create parallax background layers */
-    private createBackground(): void {
-        // Sky gradient (stretched across world)
-        const sky = this.add.tileSprite(0, 0, this.worldWidth, 600, 'bg_sky');
-        sky.setOrigin(0, 0).setDepth(DEPTH.BACKGROUND - 2).setScrollFactor(0, 0);
-        sky.setDisplaySize(GAME_WIDTH, 600);
-
-        // Stars / moon
-        const moonG = this.add.graphics();
-        moonG.fillStyle(0xeeeedd, 0.9);
-        moonG.fillCircle(0, 0, 30);
-        moonG.fillStyle(0x2d1b3d, 1);
-        moonG.fillCircle(-8, -5, 26);
-        moonG.setPosition(1000, 80).setDepth(DEPTH.BACKGROUND - 1).setScrollFactor(0.05);
-
-        // Distant mountains (far parallax)
-        for (let x = 0; x < this.worldWidth; x += 320) {
-            const mt = this.add.image(x, 350, 'bg_mountains');
-            mt.setOrigin(0, 0).setDepth(DEPTH.BACKGROUND - 1).setScrollFactor(0.2, 0.5);
-        }
-
-        // Mid-ground buildings
-        const buildingPositions = [200, 600, 1100, 1700, 2200, 2700];
-        buildingPositions.forEach((bx, i) => {
-            const bld = this.add.image(bx, 560, 'bg_building');
-            bld.setOrigin(0, 0).setDepth(DEPTH.BACKGROUND).setScrollFactor(0.5, 0.7);
-            bld.setAlpha(0.6 + (i % 3) * 0.1);
-        });
-    }
-
-    private createPlatforms(): void {
-        this.platforms = this.physics.add.staticGroup();
-
-        // Ground floor - use tiling for texture
-        this.createTexturedPlatform(0, 1050, this.worldWidth, 150, 'ground');
-
-        // Market stalls / platforms - wood textured
-        this.createTexturedPlatform(100, 900, 250, 20, 'wood');
-        this.createTexturedPlatform(450, 800, 200, 20, 'wood');
-
-        // Central plaza - stone
-        this.createTexturedPlatform(750, 850, 500, 20, 'stone');
-
-        // Right section
-        this.createTexturedPlatform(1400, 900, 250, 20, 'wood');
-        this.createTexturedPlatform(1750, 800, 200, 20, 'wood');
-
-        // Upper walkways - wood
-        this.createTexturedPlatform(200, 650, 300, 20, 'wood');
-        this.createTexturedPlatform(600, 600, 200, 20, 'wood');
-        this.createTexturedPlatform(900, 550, 300, 20, 'stone');
-        this.createTexturedPlatform(1300, 600, 200, 20, 'wood');
-        this.createTexturedPlatform(1600, 650, 300, 20, 'wood');
-
-        // Roof access
-        this.createTexturedPlatform(400, 400, 200, 20, 'stone');
-        this.createTexturedPlatform(1000, 350, 200, 20, 'stone');
-        this.createTexturedPlatform(1500, 400, 200, 20, 'stone');
-
-        // Extended area
-        this.createTexturedPlatform(2000, 950, 300, 20, 'wood');
-        this.createTexturedPlatform(2400, 850, 250, 20, 'wood');
-        this.createTexturedPlatform(2700, 750, 300, 20, 'wood');
-        this.createTexturedPlatform(2500, 600, 200, 20, 'stone');
-    }
-
-    /** Create a textured platform with visual tiling */
-    private createTexturedPlatform(x: number, y: number, width: number, height: number, type: 'ground' | 'wood' | 'stone'): void {
-        // Physics collider (invisible)
-        const platform = this.add.rectangle(x + width / 2, y + height / 2, width, height);
-        platform.setVisible(false);
-        this.physics.add.existing(platform, true);
-        this.platforms.add(platform);
-
-        // Visual tiling
-        if (type === 'ground') {
-            // Ground: dirt with grass on top
-            const dirt = this.add.rectangle(x + width / 2, y + height / 2, width, height, 0x554433);
-            dirt.setDepth(DEPTH.TILES);
-            // Grass strip on top
-            const grass = this.add.rectangle(x + width / 2, y + 3, width, 8, 0x446633);
-            grass.setDepth(DEPTH.TILES + 1);
-            // Grass highlight
-            const grassHighlight = this.add.rectangle(x + width / 2, y + 1, width, 3, 0x558844);
-            grassHighlight.setDepth(DEPTH.TILES + 2);
-        } else if (type === 'wood') {
-            const plank = this.add.rectangle(x + width / 2, y + height / 2, width, height, 0x775533);
-            plank.setDepth(DEPTH.TILES);
-            // Wood grain lines
-            const line1 = this.add.rectangle(x + width / 2, y + 5, width, 1, 0x664422);
-            line1.setDepth(DEPTH.TILES + 1);
-            const line2 = this.add.rectangle(x + width / 2, y + 12, width, 1, 0x664422);
-            line2.setDepth(DEPTH.TILES + 1);
-            // Top highlight
-            const highlight = this.add.rectangle(x + width / 2, y + 1, width, 2, 0x886644);
-            highlight.setDepth(DEPTH.TILES + 2);
-            // Bottom shadow
-            const shadow = this.add.rectangle(x + width / 2, y + height - 1, width, 2, 0x553311);
-            shadow.setDepth(DEPTH.TILES + 1);
-        } else {
-            // Stone
-            const stone = this.add.rectangle(x + width / 2, y + height / 2, width, height, 0x666677);
-            stone.setDepth(DEPTH.TILES);
-            // Top highlight
-            const highlight = this.add.rectangle(x + width / 2, y + 1, width, 2, 0x888899);
-            highlight.setDepth(DEPTH.TILES + 2);
-            // Bottom shadow
-            const shadow = this.add.rectangle(x + width / 2, y + height - 1, width, 2, 0x444455);
-            shadow.setDepth(DEPTH.TILES + 1);
-        }
-    }
-
-    private createDecorations(): void {
-        // Area title banner
-        const bannerBg = this.add.rectangle(1000, 515, 200, 36, 0x000000, 0.4);
-        bannerBg.setDepth(DEPTH.BACKGROUND + 1);
-        this.add.text(1000, 515, '저잣거리', {
-            fontSize: '24px',
-            color: '#ffd700',
-            stroke: '#000000',
-            strokeThickness: 3,
-            fontStyle: 'bold',
-        }).setOrigin(0.5).setDepth(DEPTH.BACKGROUND + 2);
-
-        // Directional signs with arrow sprites
-        this.createDirectionSign(100, 1010, '← 송악', '#88aaff');
-        this.createDirectionSign(this.worldWidth - 200, 1010, '완산주 →', '#ff8888');
-        this.createDirectionSign(1000, 320, '↑ 철원', '#aa88ff');
-
-        // Shop signs
-        this.createShopSign(200, 865, '주막', '#ffaa44');
-        this.createShopSign(1000, 815, '광장', '#ffaa44');
-        this.createShopSign(1600, 865, '대장장이', '#ff6633');
-        this.createShopSign(900, 815, '의뢰 게시판', '#88ff88');
-
-        // Lanterns (hanging from platforms)
-        const lanternPositions = [300, 550, 850, 1100, 1500, 1800, 2200, 2600];
-        lanternPositions.forEach((lx, i) => {
-            const ly = 500 + (i % 3) * 100;
-            const lantern = this.add.image(lx, ly, 'lantern');
-            lantern.setDepth(DEPTH.BACKGROUND + 3);
-            // Subtle glow
-            const glow = this.add.circle(lx, ly + 10, 20, 0xffaa44, 0.1);
-            glow.setDepth(DEPTH.BACKGROUND + 2);
-            // Animate glow
-            this.tweens.add({
-                targets: glow,
-                alpha: { from: 0.05, to: 0.15 },
-                duration: 1500 + i * 200,
-                yoyo: true,
-                repeat: -1,
+    /**
+     * Handle player stepping onto a tile.
+     * Checks for exit transitions and encounter rolls.
+     */
+    private onPlayerStepped(gx: number, gy: number): void {
+        const exit = this.tileMap.getExit(gx, gy);
+        if (exit) {
+            const gameScene = this.scene.get(SCENES.GAME);
+            gameScene.events.emit('change_world', exit.targetScene, {
+                playerX: exit.targetX,
+                playerY: exit.targetY,
             });
-        });
+            return;
+        }
 
-        // Trees in background
-        const treePositions = [50, 350, 800, 1300, 1900, 2500, 3000];
-        treePositions.forEach((tx, i) => {
-            const tree = this.add.image(tx, 980, 'tree');
-            tree.setOrigin(0.5, 1).setDepth(DEPTH.BACKGROUND + 1);
-            tree.setScale(0.8 + (i % 3) * 0.2);
-            tree.setAlpha(0.7);
-        });
+        if (this.tileMap.isEncounterTile(gx, gy)) {
+            if (Math.random() < COMBAT.ENCOUNTER_RATE) {
+                this.startRandomBattle();
+            }
+        }
     }
 
-    /** Create a direction sign with background */
-    private createDirectionSign(x: number, y: number, text: string, color: string): void {
-        const bg = this.add.rectangle(x, y, text.length * 10 + 20, 24, 0x000000, 0.3);
-        bg.setDepth(DEPTH.BACKGROUND + 1);
-        this.add.text(x, y, text, {
-            fontSize: '14px', color,
-            stroke: '#000000', strokeThickness: 2,
-        }).setOrigin(0.5).setDepth(DEPTH.BACKGROUND + 2);
-    }
-
-    /** Create a shop sign */
-    private createShopSign(x: number, y: number, text: string, color: string): void {
-        // Hanging sign board
-        const signW = text.length * 10 + 16;
-        const bg = this.add.rectangle(x, y, signW, 22, 0x442211, 0.8);
-        bg.setDepth(DEPTH.BACKGROUND + 3);
-        const border = this.add.rectangle(x, y, signW + 2, 24, 0x664422, 0.5);
-        border.setDepth(DEPTH.BACKGROUND + 2);
-        this.add.text(x, y, text, {
-            fontSize: '12px', color,
-            stroke: '#000000', strokeThickness: 1,
-        }).setOrigin(0.5).setDepth(DEPTH.BACKGROUND + 4);
-    }
-
-    private createNPCZones(): void {
-        const npcLocations = [
-            { id: 'innkeeper', x: 200, y: 880, name: '주막 주인', texture: 'npc_innkeeper' },
-            { id: 'weaponsmith', x: 1600, y: 880, name: '대장장이', texture: 'npc_weaponsmith' },
-            { id: 'fortune_teller', x: 500, y: 780, name: '점술가', texture: 'npc_fortune_teller' },
-            { id: 'quest_board', x: 900, y: 830, name: '게시판', texture: 'npc_quest_board' },
-            { id: 'merchant', x: 1200, y: 830, name: '잡화상', texture: 'npc_merchant' },
-        ];
-
-        npcLocations.forEach(npc => {
-            // Use the NPC sprite textures
-            const sprite = this.add.image(npc.x, npc.y - 24, npc.texture);
-            sprite.setDepth(DEPTH.ENEMIES);
-
-            // Name label with background
-            const labelBg = this.add.rectangle(npc.x, npc.y - 56, npc.name.length * 9 + 10, 18, 0x000000, 0.5);
-            labelBg.setDepth(DEPTH.UI - 1);
-            const nameLabel = this.add.text(npc.x, npc.y - 56, npc.name, {
-                fontSize: '11px', color: '#ffffff',
-                stroke: '#000000', strokeThickness: 2,
-            }).setOrigin(0.5).setDepth(DEPTH.UI);
-
-            // Interaction indicator (floating arrow)
-            const arrow = this.add.text(npc.x, npc.y - 70, '▼', {
-                fontSize: '10px', color: '#ffdd44',
-            }).setOrigin(0.5).setDepth(DEPTH.UI);
-            this.tweens.add({
-                targets: arrow,
-                y: npc.y - 76,
-                duration: 800,
-                yoyo: true,
-                repeat: -1,
-                ease: 'Sine.easeInOut',
+    /**
+     * Handle player interact action at the faced tile.
+     * Triggers NPC dialogue when applicable.
+     */
+    private onPlayerInteract(gx: number, gy: number): void {
+        const npc = this.tileMap.getNPCAt(gx, gy);
+        if (npc && npc.dialogueId) {
+            const uiScene = this.scene.get(SCENES.UI);
+            uiScene.events.emit('show_dialogue_line', {
+                speaker: npc.name,
+                text: this.getNPCDialogue(npc.npcId),
+                speakerColor: '#ffd700',
             });
-        });
+        }
     }
 
-    private createExitZones(): void {
-        // Left exit -> Songak
-        const leftExit = this.add.zone(0, 900, 40, 200);
-        this.physics.add.existing(leftExit, true);
-        // Right exit -> Wansanju
-        const rightExit = this.add.zone(this.worldWidth, 900, 40, 200);
-        this.physics.add.existing(rightExit, true);
-        // Top exit -> Cheolwon
-        const topExit = this.add.zone(1000, 0, 200, 40);
-        this.physics.add.existing(topExit, true);
+    /**
+     * Start a random encounter battle.
+     * Hub is a safe zone so the enemy list is empty by default.
+     */
+    private startRandomBattle(): void {
+        const enemies = this.getAreaEnemies();
+        if (enemies.length === 0) return;
+        const enemy = enemies[Math.floor(Math.random() * enemies.length)];
+        const gameScene = this.scene.get(SCENES.GAME);
+        gameScene.events.emit('start_battle', enemy);
     }
 
-    /** Show tutorial overlay */
-    private showTutorial(): void {
-        const cam = this.cameras.main;
-        const cx = cam.scrollX + GAME_WIDTH / 2;
-        const cy = cam.scrollY + GAME_HEIGHT / 2;
+    /** Hub is a safe zone -- no random encounter enemies */
+    private getAreaEnemies(): Array<{
+        enemyName: string;
+        enemyNameKo: string;
+        enemyHp: number;
+        enemyAtk: number;
+        enemyDef: number;
+        enemyExp: number;
+        enemyGold: [number, number];
+        returnScene: string;
+    }> {
+        return [];
+    }
 
-        this.tutorialContainer = this.add.container(cx, cy);
-        this.tutorialContainer.setDepth(DEPTH.UI + 100);
-        this.tutorialContainer.setScrollFactor(0);
-        this.tutorialContainer.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2);
+    /**
+     * Return dialogue text for a hub NPC.
+     * @param npcId The unique NPC identifier
+     */
+    private getNPCDialogue(npcId: string): string {
+        const dialogues: Record<string, string> = {
+            quest_board: '현재 의뢰가 게시되어 있습니다. 확인해 보시오.',
+            merchant: '좋은 물건 많소! 천천히 구경하시오. 무엇이든 필요하시면 말씀하시오.',
+            blacksmith: '검이든 갑옷이든, 내 손을 거치면 명품이 되지. 뭘 만들어 줄까?',
+            elder: '이 저잣거리는 삼한의 중심이오. 동서남북으로 어디든 갈 수 있소. 조심히 다니시오.',
+        };
+        return dialogues[npcId] ?? '...';
+    }
 
-        // Dark overlay
-        const overlay = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75);
-        this.tutorialContainer.add(overlay);
+    /**
+     * Procedurally build the 40 x 30 tile map for the marketplace hub.
+     *
+     * Layout notes:
+     *  - Fence perimeter with four path openings (exits)
+     *  - N-S road (cols 19-20) intersects E-W road (rows 14-15)
+     *  - Buildings in each quadrant with paths connecting to the roads
+     *  - Trees, flowers, a signpost, and four tall-grass patches
+     */
+    private getMapData(): IMapData {
+        const T = TILE;
+        const W = MAP_WIDTH;
+        const H = MAP_HEIGHT;
 
-        // Title
-        const title = this.add.text(0, -220, '삼한지몽 - 조작법', {
-            fontSize: '32px', color: '#ffd700',
-            stroke: '#000000', strokeThickness: 4,
-            fontStyle: 'bold',
-        }).setOrigin(0.5);
-        this.tutorialContainer.add(title);
+        const tiles: number[][] = Array.from(
+            { length: H },
+            () => new Array(W).fill(T.GRASS),
+        );
 
-        // Controls layout
-        const controls = [
-            { label: '이동', key: 'A / D  또는  ← / →', y: -150 },
-            { label: '점프', key: 'Space  또는  W', y: -110 },
-            { label: '공격 (콤보)', key: 'Z  또는  J', y: -70 },
-            { label: '회피 (무적)', key: 'C  또는  L', y: -30 },
-            { label: '패링', key: 'Shift', y: 10 },
-            { label: '회복', key: 'V  또는  H', y: 50 },
-            { label: '인벤토리', key: 'I', y: 110 },
-            { label: '지도', key: 'M', y: 150 },
-            { label: '메뉴', key: 'ESC', y: 190 },
-        ];
+        /** Set a single tile (bounds-checked) */
+        const set = (x: number, y: number, t: number): void => {
+            if (x >= 0 && x < W && y >= 0 && y < H) tiles[y][x] = t;
+        };
 
-        controls.forEach(ctrl => {
-            // Action label
-            const actionText = this.add.text(-180, ctrl.y, ctrl.label, {
-                fontSize: '18px', color: '#ffffff',
-                stroke: '#000000', strokeThickness: 2,
-            }).setOrigin(0, 0.5);
-            this.tutorialContainer!.add(actionText);
-
-            // Key box
-            const keyBg = this.add.rectangle(80, ctrl.y, 260, 28, 0x333355, 0.8);
-            this.tutorialContainer!.add(keyBg);
-            const keyText = this.add.text(80, ctrl.y, ctrl.key, {
-                fontSize: '16px', color: '#88bbff',
-                stroke: '#000000', strokeThickness: 1,
-            }).setOrigin(0.5);
-            this.tutorialContainer!.add(keyText);
-        });
-
-        // Separator line
-        const line = this.add.rectangle(0, 85, 400, 2, 0x555577, 0.5);
-        this.tutorialContainer.add(line);
-
-        // Hint
-        const hintText = this.add.text(0, 240, '아무 키를 눌러 시작', {
-            fontSize: '20px', color: '#ffdd44',
-            stroke: '#000000', strokeThickness: 3,
-        }).setOrigin(0.5);
-        this.tutorialContainer.add(hintText);
-
-        // Blink the hint
-        this.tweens.add({
-            targets: hintText,
-            alpha: { from: 1, to: 0.3 },
-            duration: 800,
-            yoyo: true,
-            repeat: -1,
-        });
-
-        // Close on any key press
-        const closeHandler = () => {
-            if (this.tutorialContainer) {
-                this.tweens.add({
-                    targets: this.tutorialContainer,
-                    alpha: 0,
-                    duration: 300,
-                    onComplete: () => {
-                        this.tutorialContainer?.destroy();
-                        this.tutorialContainer = null;
-                    },
-                });
+        /** Fill a rectangle from (x1,y1) to (x2,y2) inclusive */
+        const rect = (x1: number, y1: number, x2: number, y2: number, t: number): void => {
+            for (let y = y1; y <= y2; y++) {
+                for (let x = x1; x <= x2; x++) {
+                    set(x, y, t);
+                }
             }
         };
 
-        if (this.input.keyboard) {
-            this.input.keyboard.once('keydown', closeHandler);
-        }
-        this.input.once('pointerdown', closeHandler);
-    }
+        /* === 1. Fence perimeter === */
+        for (let x = 0; x < W; x++) { set(x, 0, T.FENCE); set(x, H - 1, T.FENCE); }
+        for (let y = 0; y < H; y++) { set(0, y, T.FENCE); set(W - 1, y, T.FENCE); }
 
-    /** Get the platforms group for collision setup */
-    public getPlatforms(): Phaser.Physics.Arcade.StaticGroup {
-        return this.platforms;
+        /* === 2. Main roads === */
+        rect(19, 1, 20, H - 2, T.PATH);         /* N-S road */
+        rect(1, 14, W - 2, 15, T.PATH);          /* E-W road */
+        rect(18, 13, 21, 16, T.PATH);            /* widened intersection */
+
+        /* === 3. Exit openings (overwrite fence with path) === */
+        rect(18, 0, 21, 2, T.PATH);              /* North -> Songak */
+        rect(18, H - 3, 21, H - 1, T.PATH);      /* South -> Geumseong */
+        rect(0, 13, 2, 16, T.PATH);               /* West  -> Cheolwon */
+        rect(W - 3, 13, W - 1, 16, T.PATH);       /* East  -> Wansanju */
+
+        /* === 4. Side paths to buildings === */
+        rect(8, 7, 19, 8, T.PATH);               /* upper-left branch */
+        rect(20, 7, 31, 8, T.PATH);              /* upper-right branch */
+        rect(7, 15, 8, 19, T.PATH);              /* left branch down */
+        rect(7, 23, 19, 23, T.PATH);             /* bottom-left branch */
+        rect(31, 15, 32, 19, T.PATH);            /* right branch down */
+        rect(20, 23, 32, 23, T.PATH);            /* bottom-right branch */
+
+        /* === 5. Buildings === */
+
+        /* Quest Board pavilion (top-left, cols 6-10, rows 4-6) */
+        rect(6, 4, 10, 4, T.ROOF_RED);
+        rect(6, 5, 10, 6, T.BUILDING_WALL);
+        set(8, 6, T.DOOR);
+
+        /* Merchant shop (top-right, cols 29-33, rows 4-6) */
+        rect(29, 4, 33, 4, T.BUILDING_ROOF);
+        rect(29, 5, 33, 6, T.BUILDING_WALL);
+        set(31, 6, T.DOOR);
+
+        /* Elder's house (bottom-left, cols 6-10, rows 20-22) */
+        rect(6, 20, 10, 20, T.BUILDING_ROOF);
+        rect(6, 21, 10, 22, T.BUILDING_WALL);
+        set(8, 22, T.DOOR);
+
+        /* Blacksmith forge (bottom-right, cols 29-33, rows 20-22) */
+        rect(29, 20, 33, 20, T.ROOF_RED);
+        rect(29, 21, 33, 22, T.BUILDING_WALL);
+        set(31, 22, T.DOOR);
+
+        /* === 6. Signpost at intersection === */
+        set(18, 13, T.SIGN);
+
+        /* === 7. Trees (top = TREE_TOP, bottom = TREE_TRUNK) === */
+        const treeBases: Array<[number, number]> = [
+            [3, 3], [15, 3], [24, 3], [36, 3],
+            [3, 11], [36, 11],
+            [13, 10], [26, 10],
+            [3, 18], [36, 18],
+            [15, 18], [24, 18],
+            [3, 26], [15, 26], [24, 26], [36, 26],
+        ];
+        for (const [tx, ty] of treeBases) {
+            set(tx, ty - 1, T.TREE_TOP);
+            set(tx, ty, T.TREE_TRUNK);
+        }
+
+        /* === 8. Flowers === */
+        const flowers: Array<[number, number]> = [
+            [5, 8], [11, 8], [28, 8], [34, 8],
+            [5, 24], [11, 24], [28, 24], [34, 24],
+            [17, 12], [22, 12], [17, 17], [22, 17],
+            [17, 14], [22, 14], [17, 16], [22, 16],
+        ];
+        for (const [fx, fy] of flowers) set(fx, fy, T.FLOWER);
+
+        /* === 9. Tall grass patches (encounter zones) === */
+        rect(12, 10, 14, 12, T.TALL_GRASS);      /* top-left */
+        rect(25, 10, 27, 12, T.TALL_GRASS);       /* top-right */
+        rect(12, 17, 14, 19, T.TALL_GRASS);       /* bottom-left */
+        rect(25, 17, 27, 19, T.TALL_GRASS);       /* bottom-right */
+
+        /* === 10. NPCs === */
+        const npcs = [
+            {
+                npcId: 'quest_board',
+                gridX: 8,
+                gridY: 7,
+                spriteKey: 'npc_quest_board',
+                name: '퀘스트 판',
+                dialogueId: 'quest_board',
+            },
+            {
+                npcId: 'merchant',
+                gridX: 31,
+                gridY: 7,
+                spriteKey: 'npc_merchant',
+                name: '상인',
+                dialogueId: 'merchant',
+            },
+            {
+                npcId: 'elder',
+                gridX: 8,
+                gridY: 23,
+                spriteKey: 'npc_elder',
+                name: '장로',
+                dialogueId: 'elder',
+            },
+            {
+                npcId: 'blacksmith',
+                gridX: 31,
+                gridY: 23,
+                spriteKey: 'npc_blacksmith',
+                name: '대장장이',
+                dialogueId: 'blacksmith',
+            },
+        ];
+
+        /* === 11. Exits === */
+        const exits = [
+            /* North -> Songak (player arrives at Songak's south edge) */
+            { gridX: 18, gridY: 0, targetScene: SCENES.SONGAK, targetX: 21, targetY: 33 },
+            { gridX: 19, gridY: 0, targetScene: SCENES.SONGAK, targetX: 22, targetY: 33 },
+            { gridX: 20, gridY: 0, targetScene: SCENES.SONGAK, targetX: 22, targetY: 33 },
+            { gridX: 21, gridY: 0, targetScene: SCENES.SONGAK, targetX: 23, targetY: 33 },
+            /* South -> Geumseong (player arrives at Geumseong's north edge) */
+            { gridX: 18, gridY: H - 1, targetScene: SCENES.GEUMSEONG, targetX: 21, targetY: 2 },
+            { gridX: 19, gridY: H - 1, targetScene: SCENES.GEUMSEONG, targetX: 22, targetY: 2 },
+            { gridX: 20, gridY: H - 1, targetScene: SCENES.GEUMSEONG, targetX: 22, targetY: 2 },
+            { gridX: 21, gridY: H - 1, targetScene: SCENES.GEUMSEONG, targetX: 23, targetY: 2 },
+            /* West -> Cheolwon (player arrives at Cheolwon's east edge) */
+            { gridX: 0, gridY: 13, targetScene: SCENES.CHEOLWON, targetX: 42, targetY: 16 },
+            { gridX: 0, gridY: 14, targetScene: SCENES.CHEOLWON, targetX: 42, targetY: 17 },
+            { gridX: 0, gridY: 15, targetScene: SCENES.CHEOLWON, targetX: 42, targetY: 17 },
+            { gridX: 0, gridY: 16, targetScene: SCENES.CHEOLWON, targetX: 42, targetY: 18 },
+            /* East -> Wansanju (player arrives at Wansanju's west edge) */
+            { gridX: W - 1, gridY: 13, targetScene: SCENES.WANSANJU, targetX: 2, targetY: 16 },
+            { gridX: W - 1, gridY: 14, targetScene: SCENES.WANSANJU, targetX: 2, targetY: 17 },
+            { gridX: W - 1, gridY: 15, targetScene: SCENES.WANSANJU, targetX: 2, targetY: 17 },
+            { gridX: W - 1, gridY: 16, targetScene: SCENES.WANSANJU, targetX: 2, targetY: 18 },
+        ];
+
+        return { width: W, height: H, tiles, npcs, exits };
     }
 }
