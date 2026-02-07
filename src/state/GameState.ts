@@ -125,6 +125,8 @@ export class GameState {
     public getEnergy(): number { return this.energy; }
     public getMaxEnergy(): number { return this.maxEnergy; }
     public setEnergy(value: number): void { this.energy = Math.max(0, Math.min(value, this.maxEnergy)); }
+    public getAttackPower(): number { return this.attackPower; }
+    public getDefense(): number { return this.defense; }
     public getGold(): number { return this.gold; }
     public getLevel(): number { return this.level; }
     public getExp(): number { return this.exp; }

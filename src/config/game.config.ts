@@ -5,6 +5,7 @@ import { MainMenuScene } from '../scenes/MainMenuScene';
 import { GameScene } from '../scenes/GameScene';
 import { UIScene } from '../scenes/UIScene';
 import { DialogueScene } from '../scenes/DialogueScene';
+import { BattleScene } from '../scenes/BattleScene';
 import { HubScene } from '../scenes/worlds/HubScene';
 import { SongakScene } from '../scenes/worlds/SongakScene';
 import { WansanjuScene } from '../scenes/worlds/WansanjuScene';
@@ -19,13 +20,10 @@ export const GAME_WIDTH = 1280;
 /** Game resolution height */
 export const GAME_HEIGHT = 720;
 
-/** Global gravity value */
-export const GRAVITY_Y = 800;
-
 /** Whether the game is in development mode */
 export const IS_DEV = import.meta.env.DEV;
 
-/** Main Phaser game configuration */
+/** Main Phaser game configuration for top-down RPG (no gravity) */
 export const gameConfig: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
     width: GAME_WIDTH,
@@ -40,7 +38,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
     physics: {
         default: 'arcade',
         arcade: {
-            gravity: { x: 0, y: GRAVITY_Y },
+            gravity: { x: 0, y: 0 },
             debug: IS_DEV,
         },
     },
@@ -54,6 +52,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
         GameScene,
         UIScene,
         DialogueScene,
+        BattleScene,
         HubScene,
         SongakScene,
         WansanjuScene,

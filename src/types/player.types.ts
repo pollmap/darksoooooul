@@ -35,6 +35,8 @@ export interface IPlayerState {
     position: { x: number; y: number };
     currentArea: string;
     facingRight: boolean;
+    /** Current facing direction for top-down (0=down,1=up,2=left,3=right) */
+    direction: number;
 }
 
 /** Attack frame data */

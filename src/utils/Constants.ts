@@ -1,8 +1,14 @@
-/** Game-wide constants */
+/** Game-wide constants - Top-down Pixel RPG Version */
 
 /** Game resolution */
 export const GAME_WIDTH = 1280;
 export const GAME_HEIGHT = 720;
+
+/** Tile and map constants */
+export const TILE_SIZE = 16;
+export const CAMERA_ZOOM = 3;
+export const PLAYER_SPEED = 2; // tiles per second for grid movement
+export const MOVE_DURATION = 180; // ms to slide one tile
 
 /** Scene keys */
 export const SCENES = {
@@ -12,6 +18,7 @@ export const SCENES = {
     GAME: 'GameScene',
     UI: 'UIScene',
     DIALOGUE: 'DialogueScene',
+    BATTLE: 'BattleScene',
     HUB: 'HubScene',
     SONGAK: 'SongakScene',
     WANSANJU: 'WansanjuScene',
@@ -33,6 +40,20 @@ export const FACTIONS = {
 /** Color palette */
 export const COLORS = {
     BACKGROUND: 0x1a1a2e,
+    GRASS: 0x5b8c3e,
+    GRASS_DARK: 0x4a7a30,
+    PATH: 0xc8b478,
+    PATH_DARK: 0xb5a068,
+    WATER: 0x3a7ecf,
+    WATER_LIGHT: 0x5a9eef,
+    TALL_GRASS: 0x3d6e28,
+    TREE_TRUNK: 0x6b4226,
+    TREE_LEAVES: 0x2d6e1e,
+    FENCE: 0x5a4a3a,
+    BUILDING_WALL: 0x8a7a6a,
+    BUILDING_ROOF: 0x4a3a2e,
+    BUILDING_ROOF_RED: 0x8b3a3a,
+    DOOR: 0x5a3a1a,
     PLAYER1_ACCENT: 0x1a237e,
     PLAYER2_ACCENT: 0x00897b,
     TAEBONG: 0x4a148c,
@@ -41,6 +62,7 @@ export const COLORS = {
     SILLA: 0xff8f00,
     BALHAE: 0x1565c0,
     HEALTH_BAR: 0xc62828,
+    HEALTH_BAR_BG: 0x333333,
     ENERGY_BAR: 0x1565c0,
     EXP_BAR: 0x7cb342,
     GOLD: 0xffd700,
@@ -59,23 +81,24 @@ export const COLOR_STRINGS = {
     GREY: '#888888',
 } as const;
 
-/** Physics constants */
+/** Physics constants (no gravity for top-down) */
 export const PHYSICS = {
-    TILE_SIZE: 32,
-    GRAVITY_Y: 800,
-    MAX_VELOCITY_X: 400,
-    MAX_VELOCITY_Y: 600,
+    TILE_SIZE: 16,
+    GRAVITY_Y: 0,
+    MAX_VELOCITY_X: 200,
+    MAX_VELOCITY_Y: 200,
 } as const;
 
 /** Combat constants */
 export const COMBAT = {
-    COOP_BONUS_WINDOW: 300,
-    COOP_BONUS_MULTIPLIER: 1.2,
+    ENCOUNTER_RATE: 0.08, // 8% chance per tall grass step
     CRIT_CHANCE: 0.05,
     CRIT_MULTIPLIER: 1.5,
-    BACKSTAB_CRIT: true,
     INVINCIBILITY_AFTER_HIT: 500,
     KNOCKBACK_FORCE: 100,
+    COOP_BONUS_WINDOW: 300,
+    COOP_BONUS_MULTIPLIER: 1.2,
+    BACKSTAB_CRIT: true,
 } as const;
 
 /** Co-op constants */
@@ -97,7 +120,7 @@ export const COOP = {
 export const SAVE = {
     KEY_PREFIX: 'samhanjimong_save_',
     MAX_SLOTS: 3,
-    CURRENT_VERSION: '1.0.0',
+    CURRENT_VERSION: '2.0.0',
     AUTO_SAVE_SLOT: '0_auto',
 } as const;
 
@@ -115,12 +138,15 @@ export const REPUTATION = {
 export const DEPTH = {
     BACKGROUND: 0,
     TILES: 10,
+    TILES_ABOVE: 15,
     ITEMS: 20,
     ENEMIES: 30,
     PLAYER: 40,
+    NPC: 35,
     PROJECTILES: 50,
     EFFECTS: 60,
     FOREGROUND: 70,
+    TREE_TOP: 75,
     UI: 100,
 } as const;
 
@@ -147,8 +173,8 @@ export const AUDIO = {
         ENEMY_HURT: 'sfx_enemy_hurt',
         ENEMY_DEATH: 'sfx_enemy_death',
         FOOTSTEP: 'sfx_footstep',
-        JUMP: 'sfx_jump',
-        LAND: 'sfx_land',
+        BUMP: 'sfx_bump',
+        ENCOUNTER: 'sfx_encounter',
         DODGE: 'sfx_dodge',
         PARRY_NORMAL: 'sfx_parry_normal',
         PARRY_PERFECT: 'sfx_parry_perfect',
@@ -161,3 +187,50 @@ export const AUDIO = {
         QUEST_COMPLETE: 'sfx_quest_complete',
     },
 } as const;
+
+/** Tile type IDs for map data */
+export const TILE = {
+    GRASS: 0,
+    PATH: 1,
+    WATER: 2,
+    TALL_GRASS: 3,
+    TREE_TRUNK: 4,
+    TREE_TOP: 5,
+    FENCE: 6,
+    BUILDING_WALL: 7,
+    BUILDING_ROOF: 8,
+    DOOR: 9,
+    FLOWER: 10,
+    SIGN: 11,
+    BRIDGE: 12,
+    STAIRS: 13,
+    ROOF_RED: 14,
+    EMPTY: 15,
+} as const;
+
+/** Which tiles block movement */
+export const SOLID_TILES: Set<number> = new Set([
+    TILE.WATER,
+    TILE.TREE_TRUNK,
+    TILE.TREE_TOP,
+    TILE.FENCE,
+    TILE.BUILDING_WALL,
+    TILE.BUILDING_ROOF,
+    TILE.SIGN,
+    TILE.ROOF_RED,
+]);
+
+/** Which tiles trigger random encounters */
+export const ENCOUNTER_TILES: Set<number> = new Set([
+    TILE.TALL_GRASS,
+]);
+
+/** Direction constants */
+export const DIR = {
+    DOWN: 0,
+    UP: 1,
+    LEFT: 2,
+    RIGHT: 3,
+} as const;
+
+export type TDirection = 0 | 1 | 2 | 3;
